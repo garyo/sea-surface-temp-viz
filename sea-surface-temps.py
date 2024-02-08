@@ -1,15 +1,18 @@
 # SPDX-License-Identifier: MIT
 
-import sys, requests, io, h5py, urllib3
+import sys
+import requests
+import io
+import urllib3
 import datetime
 import calendar
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.colors import LinearSegmentedColormap, ListedColormap
 import json
 import argparse
 import pathlib
+import h5py
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
