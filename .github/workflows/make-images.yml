@@ -1,0 +1,46 @@
+name: Create Images and Upload to Imgur
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 12 * * *'
+jobs:
+  upload-image:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+    - name: Generate
+      run: |
+        python sea-surface-temps.py --mode map --dataset sst --days-ago 1 --out sst-map.png
+        python sea-surface-temps.py --mode map --dataset anom --days-ago 1 --out sst-anom-map.png
+        python sea-surface-temps.py --mode all --dataset sst --out sst-all.png
+        python sea-surface-temps.py --mode all --dataset anom --out sst-all-anom.png
+
+    - name: Upload images to Imgur
+      env:
+        IMGUR_CLIENT_ID: ${{ secrets.IMGUR_CLIENT_ID }}
+      run: |
+      
+        curl --request POST \
+          --url https://api.imgur.com/3/image \
+          --header "Authorization: Client-ID $IMGUR_CLIENT_ID" \
+          --form image=@"./sst-map.png"
+        curl --request POST \
+          --url https://api.imgur.com/3/image \
+          --header "Authorization: Client-ID $IMGUR_CLIENT_ID" \
+          --form image=@"./sst-anom-map.png"
+        curl --request POST \
+          --url https://api.imgur.com/3/image \
+          --header "Authorization: Client-ID $IMGUR_CLIENT_ID" \
+          --form image=@"./sst-all.png"
+        curl --request POST \
+          --url https://api.imgur.com/3/image \
+          --header "Authorization: Client-ID $IMGUR_CLIENT_ID" \
+          --form image=@"./sst-all-anom.png"

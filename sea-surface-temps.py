@@ -171,8 +171,7 @@ def plot_globe_dataset(data, hdf, vmin, vmax, cmap, title):
     plt.colorbar(c, orientation='horizontal', pad=0.05)
 
     plt.title(title)
-    plt.savefig('/tmp/sst-map.png', dpi=300)
-    plt.show()
+    return plt
 
 def process_date(args):
     if args.days_ago:
@@ -204,6 +203,11 @@ def process_date(args):
                                                       [0.8, "yellow"], [0.9, "red"],
                                                       [1.0, "darkred"]])
         plot_globe_dataset(data, hdf, 0, 30, sst_cmap, f'{date}\nSea Surface Temp, °C')
+    if args.out:
+        plt.savefig(args.out, dpi=300)
+    else:
+        plt.show()
+
 
 def process_all(args):
     def get_data(temp_data, dataset_name):
@@ -261,8 +265,10 @@ def process_all(args):
         plt.text(0, 0,
                  msg,
                  ha="left", va="top", transform=plt.gca().transAxes, fontsize=9)
-        plt.savefig('/tmp/sst.png', dpi=300)
-        plt.show()
+        if args.out:
+            plt.savefig(args.out, dpi=300)
+        else:
+            plt.show()
 
     temp_data = {}               # indexed by year and then day of year (0-based)
     type = 'anom'                # 'anom' or 'sst'
@@ -300,6 +306,8 @@ def main(argv=None):
         parser.add_argument('--days-ago', type=int,
                             default=0,
                             help="""Days ago (before today), for map mode""")
+        parser.add_argument('--out', '-o', type=pathlib.Path,
+                            help="""Output image to this path""")
         parser.add_argument('--cache-file', type=pathlib.Path,
                             default='./sst-data-cache.json',
                             help="""Cache file to speed up future runs""")
