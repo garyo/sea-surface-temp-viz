@@ -6,6 +6,6 @@ series per year.
 
 Examples:
 ![SST temp map](doc/sst-temp-map.png "SST temp map")
-![SST anomaly map](doc/sst-anomalies-map.png "SST anomaly map")
+![SST anomaly map](doc/sst-var-map.png "SST anomaly map")
 ![SST anomaly graph](doc/sst-anomalies.png "SST anomalies")
 
