@@ -1,11 +1,15 @@
-import requests, io, h5py, urllib3
+# SPDX-License-Identifier: MIT
+
+import sys, requests, io, h5py, urllib3
 import datetime
 import calendar
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import json
 from matplotlib.colors import LinearSegmentedColormap, ListedColormap
+import json
+import argparse
+import pathlib
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -98,17 +102,25 @@ def get_average_temp(hdf, dataset_name):
     return average
 
 # Disk cache: entries are yyyy-mm-dd-DATASETNAME
-temps_cache_file='/tmp/sst-data-cache.json'
-try:
-    with open(temps_cache_file, 'r') as f:
-        temps_cache = json.load(f)
-except IOError:
-    temps_cache = {}
+temps_cache_file='./sst-data-cache.json'
+temps_cache = {}
 
 def save_cache():
+    global temps_cache
+    global temps_cache_file
     json_data = json.dumps(temps_cache, cls=NumpyArrayEncoder)
     with open(temps_cache_file, 'w') as f:
         f.write(json_data)
+
+def load_cache(path):
+    global temps_cache_file
+    global temps_cache
+    temps_cache_file = path
+    try:
+        with open(temps_cache_file, 'r') as f:
+            temps_cache = json.load(f)
+    except IOError:
+        temps_cache = {}
 
 def get_temp_for_date(year, mo, day, dataset_name):
     cache_key = f'{year}-{mo:02}-{day:02}-{dataset_name}'
@@ -156,34 +168,41 @@ def plot_globe_dataset(data, hdf, vmin, vmax, cmap, title):
     plt.colorbar(c, orientation='horizontal', pad=0.05)
 
     plt.title(title)
+    plt.savefig('/tmp/sst-map.png', dpi=300)
     plt.show()
 
-plot_map = False
-if plot_map:
-    year = 2024
-    mo = 2
-    day = 6
+def process_date(args):
+    if args.days_ago:
+        date = datetime.date.today() - datetime.timedelta(days=args.days_ago)
+        year = date.year
+        mo = date.month
+        day = date.day
+    else:
+        year = args.year
+        mo = args.month
+        day = args.day
     date=f'{year}-{mo:02}-{day:02}'
     hdf = get_sst_dataset(year, mo, day)
 
-    data = get_processed_hdf_data_array(hdf, 'anom', -90, 90)
-    # Blue below zero (midpoint=0.5), yellow to red above. Midpoint should map to 0 temp diff.
-    variance_cmap = LinearSegmentedColormap.from_list("sst_cmap",
-                                                      [[0, "white"], [0.2, "darkblue"],
-                                                       [0.45, "lightblue"], [0.5, "white"],
-                                                       [0.6, "yellow"], [0.9, "red"],
-                                                       [1.0, "darkred"]])
-    plot_globe_dataset(data, hdf, -3, 3, variance_cmap, f'{date}\nSea Surface Temp Variance from 1971–2000 Mean, °C')
-    data = get_processed_hdf_data_array(hdf, 'sst', -90, 90)
-    # white at 20°C or 0.666
-    sst_cmap = LinearSegmentedColormap.from_list("sst_cmap",
-                                                 [[0, "darkblue"], [0.666, "white"],
-                                                  [0.8, "yellow"], [0.9, "red"],
-                                                  [1.0, "darkred"]])
-    plot_globe_dataset(data, hdf, 0, 30, sst_cmap, f'{date}\nSea Surface Temp, °C')
+    if args.dataset == 'anom':
+        data = get_processed_hdf_data_array(hdf, 'anom', -90, 90)
+        # Blue below zero (midpoint=0.5), yellow to red above. Midpoint should map to 0 temp diff.
+        variance_cmap = LinearSegmentedColormap.from_list("sst_cmap",
+                                                          [[0, "white"], [0.2, "darkblue"],
+                                                           [0.45, "lightblue"], [0.5, "white"],
+                                                           [0.6, "yellow"], [0.9, "red"],
+                                                           [1.0, "darkred"]])
+        plot_globe_dataset(data, hdf, -3, 3, variance_cmap, f'{date}\nSea Surface Temp Variance from 1971–2000 Mean, °C')
+    else:
+        data = get_processed_hdf_data_array(hdf, 'sst', -90, 90)
+        # white at 20°C or 0.666
+        sst_cmap = LinearSegmentedColormap.from_list("sst_cmap",
+                                                     [[0, "darkblue"], [0.666, "white"],
+                                                      [0.8, "yellow"], [0.9, "red"],
+                                                      [1.0, "darkred"]])
+        plot_globe_dataset(data, hdf, 0, 30, sst_cmap, f'{date}\nSea Surface Temp, °C')
 
-plot_all_data = True
-if plot_all_data:
+def process_all(args):
     def get_data(temp_data, dataset_name):
         start_year = 2000
         end_year = 2024
@@ -239,7 +258,7 @@ if plot_all_data:
         plt.text(0, 0,
                  msg,
                  ha="left", va="top", transform=plt.gca().transAxes, fontsize=9)
-        plt.savefig('/tmp/sst-anomalies.png', dpi=300)
+        plt.savefig('/tmp/sst.png', dpi=300)
         plt.show()
 
     temp_data = {}               # indexed by year and then day of year (0-based)
@@ -248,3 +267,50 @@ if plot_all_data:
     plot_fig(temp_data, "Sea Surface Temp anomalies (°C) by year, vs. 1971-2000 mean"
              if type == 'anom'
              else "Sea Surface Temps by year")
+
+
+def main(argv=None):
+    class CustomFormatter(argparse.ArgumentDefaultsHelpFormatter,
+                          argparse.RawDescriptionHelpFormatter):
+        pass
+
+    try:
+        parser = argparse.ArgumentParser(description="""Sea Surface Temperature Visualizer""",
+                                         formatter_class=CustomFormatter)
+        parser.add_argument('--verbose', '-v', action='store_true',
+                            help="""Process verbosely""")
+        parser.add_argument('--dataset', '-d', choices=('anom', 'sst'),
+                            default='anom',
+                            help="""Dataset: sst=temperatures, anom=anomalies vs. mean""")
+        parser.add_argument('--mode', '-m', choices=('all', 'map'),
+                            default='all',
+                            help="""Mode: all=all time, map=map of today""")
+        parser.add_argument('--year', '-Y', type=int,
+                            default=datetime.date.today().year,
+                            help="""Year for map mode""")
+        parser.add_argument('--month', '-M', type=int,
+                            default=datetime.date.today().month,
+                            help="""Month for map mode""")
+        parser.add_argument('--day', '-D', type=int,
+                            default=datetime.date.today().day,
+                            help="""Day of month for map mode""")
+        parser.add_argument('--days-ago', type=int,
+                            default=0,
+                            help="""Days ago (before today), for map mode""")
+        parser.add_argument('--cache-file', type=pathlib.Path,
+                            default='./sst-data-cache.json',
+                            help="""Cache file to speed up future runs""")
+        args = parser.parse_args(argv)
+
+        load_cache(args.cache_file)
+        if args.mode == 'all':
+            process_all(args)
+        else:
+            process_date(args)
+    except RuntimeError as e:
+        print(e)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
