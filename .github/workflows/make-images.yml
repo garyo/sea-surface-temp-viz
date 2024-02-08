@@ -23,24 +23,45 @@ jobs:
         python sea-surface-temps.py --mode all --dataset sst --out sst-all.png
         python sea-surface-temps.py --mode all --dataset anom --out sst-all-anom.png
 
+    - name: Refresh Imgur Access Token
+      id: refresh_token
+      run: |
+        RESPONSE=$(curl --request POST \
+          --url 'https://api.imgur.com/oauth2/token' \
+          --header 'Content-Type: application/x-www-form-urlencoded' \
+          --data client_id=${{ secrets.IMGUR_CLIENT_ID }} \
+          --data client_secret=${{ secrets.IMGUR_CLIENT_SECRET }} \
+          --data refresh_token=${{ secrets.IMGUR_REFRESH_TOKEN }} \
+          --data grant_type=refresh_token)
+        echo "Response: $RESPONSE"
+        ACCESS_TOKEN=$(echo $RESPONSE | jq -r '.access_token')
+        echo "::set-output name=access_token::$ACCESS_TOKEN"
+
     - name: Upload images to Imgur
       env:
         IMGUR_CLIENT_ID: ${{ secrets.IMGUR_CLIENT_ID }}
       run: |
-      
         curl --request POST \
           --url https://api.imgur.com/3/image \
-          --header "Authorization: Client-ID $IMGUR_CLIENT_ID" \
+          --header 'Authorization: Bearer ${{ steps.refresh_token.outputs.access_token }}' \
+          --form name='sst-map.png' \
+          --form title='SST Map' \
           --form image=@"./sst-map.png"
         curl --request POST \
           --url https://api.imgur.com/3/image \
-          --header "Authorization: Client-ID $IMGUR_CLIENT_ID" \
+          --header 'Authorization: Bearer ${{ steps.refresh_token.outputs.access_token }}' \
+          --form name='sst-anom-map.png' \
+          --form title='SST Anomaly Map' \
           --form image=@"./sst-anom-map.png"
         curl --request POST \
           --url https://api.imgur.com/3/image \
-          --header "Authorization: Client-ID $IMGUR_CLIENT_ID" \
+          --header 'Authorization: Bearer ${{ steps.refresh_token.outputs.access_token }}' \
+          --form name='sst-all.png' \
+          --form title='SST Temps' \
           --form image=@"./sst-all.png"
         curl --request POST \
           --url https://api.imgur.com/3/image \
-          --header "Authorization: Client-ID $IMGUR_CLIENT_ID" \
+          --header 'Authorization: Bearer ${{ steps.refresh_token.outputs.access_token }}' \
+          --form name='sst-all-anom.png' \
+          --form title='SST Anomalies' \
           --form image=@"./sst-all-anom.png"
