@@ -159,19 +159,15 @@ async def get_temp_for_date(year, mo, day, dataset_name, session, semaphore, loc
         async with lock:
             temps_cache[cache_key] = t
             save_cache()
-    print(f"Average {dataset_name} {year}-{mo}-{day}: {t:.4f}°C")
+    # print(f"Average {dataset_name} {year}-{mo}-{day}: {t:.4f}°C")
     return (year, mo, day, t)
 
 def plot_globe_dataset(data, hdf, vmin, vmax, cmap, title):
     # Set up the map projection and figure
     # 'mollweide' is good
-    fig, ax = plt.subplots(subplot_kw={'projection': 'mollweide'})
+    fig, ax = plt.subplots(figsize=(10, 7), subplot_kw={'projection': 'mollweide'})
 
-    # Set extent (optional, to zoom into a specific area)
-    # ax.set_extent([-180, 180, -60, 60], crs=proj)
-
-    # Add coastlines for reference
-    # ax.coastlines()
+    ax.grid(visible=True)
 
     lat_1d = hdf['lat'][:]      # -90 to 90
     lon_1d = hdf['lon'][:]      # 0 to 360
@@ -189,7 +185,8 @@ def plot_globe_dataset(data, hdf, vmin, vmax, cmap, title):
     plt.colorbar(c, orientation='horizontal', pad=0.05)
 
     plt.title(title)
-    plt.suptitle(f'Created at {datetime.datetime.now()}', fontsize=5, y=0.97)
+    plt.suptitle(f'Created at {datetime.datetime.now()}\nCopyright {datetime.date.today().year} Gary Oberbrunner',
+                 fontsize=7, y=0.97)
     return plt
 
 async def process_date(args):
@@ -238,7 +235,7 @@ async def process_date(args):
 def create_multilevel_dict_with_ints():
     from collections import defaultdict
 
-    def nested_dict(n, default_type=int):
+    def nested_dict(n, default_type=float):
         if n == 1:
             return defaultdict(default_type)
         else:
@@ -254,7 +251,7 @@ async def process_all(args):
         end_year = datetime.date.today().year
         tasks = []
 
-        # Get all the data
+        # Get all the data, into a 3-level dict: results[year][month][day] = val
         for year in range(start_year, end_year + 1):
             for mo in range(1, 13):  # 12 months in a year
                 num_days = calendar.monthrange(year, mo)[1]
@@ -275,15 +272,34 @@ async def process_all(args):
 
     year_cmap = LinearSegmentedColormap.from_list("year_cmap", ["lightgray", "darkblue"])
 
+    # Convert day of year (0-based) to date
+    def year_day_to_date(year, day):
+        start_date = datetime.date(year, 1, 1)
+        return start_date + datetime.timedelta(days=day) # when day=0, it's Jan 1st
+
+    # Convert year, month, day to 0-based day number
+    def ymd_to_year_day(year, mo, day):
+        return datetime.date(year, mo, day).timetuple().tm_yday - 1
+
     def plot_fig(temps, title):
         fig, ax = plt.subplots(figsize=(10, 6))
         years = np.array(sorted(list(temps.keys())))
+        record = [-10000, (0, 0, 0)] # value, then year, month, day
         for year in years:
-            data = temps[year]
-            data = [x for x in data if not np.isnan(x)]
+            y = []
+            x = []
+            for month in np.array(sorted(list(temps[year].keys()))):
+                for day in np.array(sorted(list(temps[year][month].keys()))):
+                    val = temps[year][month][day]
+                    if not np.isnan(val):
+                        if val > record[0]:
+                            record[0] = val
+                            record[1] = (year, month, day)
+                        x.append(ymd_to_year_day(year, month, day))
+                        y.append(val)
 
             cmap_index = (year - years[0]) / (years[-1] - years[0])
-            linewidth = 1
+            linewidth = 0.5
             color = year_cmap(cmap_index)
             if year == years[-1]:
                 color = "red"
@@ -297,14 +313,30 @@ async def process_all(args):
                 label = f'{year}'
             else:
                 label = None
-            ax.plot(data, label=label, color=color, linewidth=linewidth)
+            ax.plot(x, y, label=label, color=color, linewidth=linewidth)
             if year == years[-1]:
                 # mark last point
-                plt.text(len(data), data[-1], f'{data[-1]:.2f}',
-                         verticalalignment='bottom', horizontalalignment='left')
-                plt.plot(len(data), data[-1], marker='.', markersize=5, color='black')
+                last_date = year_day_to_date(year, x[-1])
+                last_color = "blue"
+                ax.annotate(f'{last_date}\n{y[-1]:.2f}°C',
+                             xy=(x[-1], y[-1]),
+                             xytext=(3, 0), textcoords='offset points',
+                             verticalalignment='top', horizontalalignment='left',
+                             color=last_color)
+                ax.plot(x[-1], y[-1], marker='.', markersize=5, color=last_color)
+        if record[0] > -10000:
+            record_val = record[0]
+            record_x = ymd_to_year_day(*record[1])
+            ax.axhline(y=record_val, color="gray", linewidth=0.5, linestyle="dashed")
+            ax.plot(record_x, record_val, marker='.',
+                    markersize=5, color='black')
+            ax.annotate(f'record: {datetime.date(*record[1])}={record_val:.3f}',
+                        xy=(record_x, record_val),
+                        xytext=(0, 2), textcoords='offset points',
+                        fontsize=6)
         plt.title(title)
-        plt.suptitle(f'Years: {years[0]}-{years[-1]}. Created {datetime.datetime.now()}', fontsize=5, y=0.97)
+        plt.suptitle(f'Years: {years[0]}-{years[-1]}. Created {datetime.datetime.now()}\nCopyright {datetime.date.today().year} Gary Oberbrunner',
+                     fontsize=7, y=0.97)
         plt.legend(loc='lower right')
         plt.xticks([])
         plt.grid(axis='y')
@@ -327,17 +359,9 @@ async def process_all(args):
     async with aiohttp.ClientSession() as session:
         temp_data_by_date = await get_data(type, session, semaphore, lock)
 
-    # postprocess into what the plot needs (by year, then day of year)
-    temp_data = {}
-    for year in sorted(list(temp_data_by_date.keys())):
-        temp_data[year] = []
-        for month in sorted(list(temp_data_by_date[year].keys())):
-            for day in sorted(list(temp_data_by_date[year][month].keys())):
-                temp_data[year].append(temp_data_by_date[year][month][day])
-
-    plot_fig(temp_data,
-             "Sea Surface Temp anomalies (°C) by year, vs. 1971-2000 mean" if type == 'anom'
-             else "Sea Surface Temps by year")
+    plot_fig(temp_data_by_date,
+             "Global Sea Surface Temp anomalies (°C) by year, vs. 1971-2000 mean" if type == 'anom'
+             else "Global Sea Surface Temps (°C) by year")
 
 
 def main(argv=None):
