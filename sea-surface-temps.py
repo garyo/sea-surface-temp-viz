@@ -4,6 +4,8 @@ import sys
 import requests
 import io
 import urllib3
+import asyncio
+import aiohttp
 import datetime
 import calendar
 import json
@@ -15,6 +17,8 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+n_concurrent_requests = 10
 
 # Area of a given lat/lon square, relative to the size at the equator
 def rel_area(lat, lon):
@@ -41,7 +45,7 @@ class NumpyArrayEncoder(json.JSONEncoder):
 
 def get_historical_data():
     url = 'https://climatereanalyzer.org/clim/sst_daily/json/oisst2.1_world2_sst_day.json'
-    response = requests.get(url, verify=False)
+    response = requests.get(url)
     if response.status_code == 200:
         historical_data = json.loads(response.content)
         predicate = lambda x: x['name'] == '1982-2011 mean'
@@ -49,28 +53,38 @@ def get_historical_data():
         # print(mean_sst_1982_2011)
 get_historical_data()
 
-def get_sst_dataset(year, mo, day):
+# Return data from the first URL that succeeds
+async def try_fetch(urls, session):
+    for url in urls:
+        try:
+            async with session.get(url) as response:
+                if response.status == 200:
+                    return await response.read()
+        except Exception as e:
+            print(f"Failed to fetch {url}: {e}")
+            # keep going
+    raise ValueError("All URL fetches failed")
+
+
+async def get_sst_dataset(year, mo, day, session, semaphore):
     # these are about 1.5MB
     # 'anom': difference from 1971-2000 mean for that grid cell
     url_final = f'https://www.ncei.noaa.gov/data/sea-surface-temperature-optimum-interpolation/v2.1/access/avhrr/{year:04}{mo:02}/oisst-avhrr-v02r01.{year:04}{mo:02}{day:02}.nc'
     url_prelim = f'https://www.ncei.noaa.gov/data/sea-surface-temperature-optimum-interpolation/v2.1/access/avhrr/{year:04}{mo:02}/oisst-avhrr-v02r01.{year:04}{mo:02}{day:02}_preliminary.nc'
 
-    hdf = None
-    for url in (url_prelim, url_final):
-        # Download the file
-        response = requests.get(url, verify=False)
-
-        # Ensure the request was successful
-        if response.status_code == 200:
+    async with semaphore:
+        hdf = None
+        try:
+            print(f'Requesting data for {year}-{mo}-{day}...')
+            data = await try_fetch([url_prelim, url_final], session)
             # Use io.BytesIO to create a file-like object from the downloaded bytes
-            file_obj = io.BytesIO(response.content)
+            file_obj = io.BytesIO(data)
             hdf = h5py.File(file_obj, 'r')
-            break
-
-    if not hdf:
-        print(f"Failed to download {url} (or _prelim). Status code {response.status_code}.")
-        raise IOError(f"Failed to download {url}")
-    return hdf
+            print(f'Got hdf from {year}-{mo}-{day}')
+            return hdf
+        except ValueError:
+            print(f"Failed to download {year}-{mo}0-{day}.")
+            raise
 
 # Get HDF dataset, mask out where ice > 50% and array == -999, and apply scale_factor
 # Note: does not weight samples by area.
@@ -125,24 +139,28 @@ def load_cache(path):
     except IOError:
         temps_cache = {}
 
-def get_temp_for_date(year, mo, day, dataset_name):
-    cache_key = f'{year}-{mo:02}-{day:02}-{dataset_name}'
-    cached = temps_cache.get(cache_key)
-    if cached:
-        print(f"Average {dataset_name} {year}-{mo}-{day}: {cached:.4f}°C (from cache)")
-        return cached
+async def get_temp_for_date(year, mo, day, dataset_name, session, semaphore, lock):
+    async with lock:
+        cache_key = f'{year}-{mo:02}-{day:02}-{dataset_name}'
+        cached = temps_cache.get(cache_key)
+        if cached:
+            # print(f"Average {dataset_name} {year}-{mo}-{day}: {cached:.4f}°C (from cache)")
+            return (year, mo, day, cached)
+
     try:
-        hdf = get_sst_dataset(year, mo, day)
+        hdf = await get_sst_dataset(year, mo, day, session, semaphore)
         t = get_average_temp(hdf, dataset_name)
         do_save = True
-    except IOError:
+    except ValueError:
         t = np.nan
         do_save = False
+
     if do_save:
-        temps_cache[cache_key] = t
-        save_cache()
+        async with lock:
+            temps_cache[cache_key] = t
+            save_cache()
     print(f"Average {dataset_name} {year}-{mo}-{day}: {t:.4f}°C")
-    return t
+    return (year, mo, day, t)
 
 def plot_globe_dataset(data, hdf, vmin, vmax, cmap, title):
     # Set up the map projection and figure
@@ -185,7 +203,7 @@ def process_date(args):
         day = args.day
     date=f'{year}-{mo:02}-{day:02}'
     try:
-        hdf = get_sst_dataset(year, mo, day)
+        hdf = get_sst_dataset(year, mo, day, session, semaphore)
     except IOError:
         print(f"Failed to get SST data for {year}-{mo}-{day}")
         raise
@@ -213,22 +231,44 @@ def process_date(args):
         plt.show()
 
 
-def process_all(args):
-    def get_data(temp_data, dataset_name):
+# Define a function to create 3-level dictionary of ints
+def create_multilevel_dict_with_ints():
+    from collections import defaultdict
+
+    def nested_dict(n, default_type=int):
+        if n == 1:
+            return defaultdict(default_type)
+        else:
+            return defaultdict(lambda: nested_dict(n-1, default_type))
+
+    data = nested_dict(3)
+    return data
+
+
+async def process_all(args):
+    async def get_data(dataset_name, session, semaphore, lock):
         start_year = args.start_year
-        end_year = 2024
+        end_year = datetime.date.today().year
+        tasks = []
+
+        # Get all the data
         for year in range(start_year, end_year + 1):
-            temp_data[year] = []
             for mo in range(1, 13):  # 12 months in a year
                 num_days = calendar.monthrange(year, mo)[1]
                 for day in range(1, num_days + 1):
                     if datetime.date(year, mo, day) > datetime.date.today():
-                        return
+                        continue
                     try:
-                        temp_data[year].append(get_temp_for_date(year, mo, day, dataset_name))
+                        tasks.append(asyncio.create_task(get_temp_for_date(year, mo, day, dataset_name, session, semaphore, lock)))
                     except IOError:
                         print(f"Skipping {year}-{mo}-{day}: failed to get data.")
                         pass
+        results = create_multilevel_dict_with_ints()
+        for task in asyncio.as_completed(tasks):
+            year, mo, day, val = await task
+            async with lock:
+                results[year][mo][day] = val
+        return results
 
     year_cmap = LinearSegmentedColormap.from_list("year_cmap", ["lightgray", "darkblue"])
 
@@ -261,7 +301,7 @@ def process_all(args):
                          verticalalignment='bottom', horizontalalignment='left')
                 plt.plot(len(data), data[-1], marker='.', markersize=5, color='black')
         plt.title(title)
-        plt.suptitle(f'Years: {years[0]}-{years[-1]}', fontsize=5, y=0.97)
+        plt.suptitle(f'Years: {years[0]}-{years[-1]}. Created {datetime.datetime.now()}', fontsize=5, y=0.97)
         plt.legend(loc='lower right')
         plt.xticks([])
         plt.grid(axis='y')
@@ -278,11 +318,22 @@ def process_all(args):
         else:
             plt.show()
 
-    temp_data = {}               # indexed by year and then day of year (0-based)
-    type = args.dataset
-    get_data(temp_data, type) # 'sst' or 'anom' for anomaly compared to 1971-2000 baseline
-    plot_fig(temp_data, "Sea Surface Temp anomalies (°C) by year, vs. 1971-2000 mean"
-             if type == 'anom'
+    semaphore = asyncio.Semaphore(n_concurrent_requests)
+    lock = asyncio.Lock()
+    type = args.dataset # 'sst' or 'anom' for anomaly compared to 1971-2000 baseline
+    async with aiohttp.ClientSession() as session:
+        temp_data_by_date = await get_data(type, session, semaphore, lock)
+
+    # postprocess into what the plot needs (by year, then day of year)
+    temp_data = {}
+    for year in sorted(list(temp_data_by_date.keys())):
+        temp_data[year] = []
+        for month in sorted(list(temp_data_by_date[year].keys())):
+            for day in sorted(list(temp_data_by_date[year][month].keys())):
+                temp_data[year].append(temp_data_by_date[year][month][day])
+
+    plot_fig(temp_data,
+             "Sea Surface Temp anomalies (°C) by year, vs. 1971-2000 mean" if type == 'anom'
              else "Sea Surface Temps by year")
 
 
@@ -326,7 +377,7 @@ def main(argv=None):
 
         load_cache(args.cache_file)
         if args.mode == 'all':
-            process_all(args)
+            asyncio.run(process_all(args))
         else:
             process_date(args)
     except RuntimeError as e:
