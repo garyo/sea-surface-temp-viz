@@ -69,7 +69,7 @@ def get_sst_dataset(year, mo, day):
 
     if not hdf:
         print(f"Failed to download {url} (or _prelim). Status code {response.status_code}.")
-        return None
+        raise IOError(f"Failed to download {url}")
     return hdf
 
 # Get HDF dataset, mask out where ice > 50% and array == -999, and apply scale_factor
@@ -131,15 +131,15 @@ def get_temp_for_date(year, mo, day, dataset_name):
     if cached:
         print(f"Average {dataset_name} {year}-{mo}-{day}: {cached:.4f}°C (from cache)")
         return cached
-    hdf = get_sst_dataset(year, mo, day)
-    if hdf:
+    try:
+        hdf = get_sst_dataset(year, mo, day)
         t = get_average_temp(hdf, dataset_name)
         do_save = True
-    else:
+    except IOError:
         t = np.nan
         do_save = False
-    temps_cache[cache_key] = t
     if do_save:
+        temps_cache[cache_key] = t
         save_cache()
     print(f"Average {dataset_name} {year}-{mo}-{day}: {t:.4f}°C")
     return t
@@ -184,7 +184,11 @@ def process_date(args):
         mo = args.month
         day = args.day
     date=f'{year}-{mo:02}-{day:02}'
-    hdf = get_sst_dataset(year, mo, day)
+    try:
+        hdf = get_sst_dataset(year, mo, day)
+    except IOError:
+        print(f"Failed to get SST data for {year}-{mo}-{day}")
+        raise
 
     if args.dataset == 'anom':
         data = get_processed_hdf_data_array(hdf, 'anom', -90, 90)
@@ -211,7 +215,7 @@ def process_date(args):
 
 def process_all(args):
     def get_data(temp_data, dataset_name):
-        start_year = 2000
+        start_year = args.start_year
         end_year = 2024
         for year in range(start_year, end_year + 1):
             temp_data[year] = []
@@ -220,7 +224,11 @@ def process_all(args):
                 for day in range(1, num_days + 1):
                     if datetime.date(year, mo, day) > datetime.date.today():
                         return
-                    temp_data[year].append(get_temp_for_date(year, mo, day, dataset_name))
+                    try:
+                        temp_data[year].append(get_temp_for_date(year, mo, day, dataset_name))
+                    except IOError:
+                        print(f"Skipping {year}-{mo}-{day}: failed to get data.")
+                        pass
 
     year_cmap = LinearSegmentedColormap.from_list("year_cmap", ["lightgray", "darkblue"])
 
@@ -271,7 +279,7 @@ def process_all(args):
             plt.show()
 
     temp_data = {}               # indexed by year and then day of year (0-based)
-    type = 'anom'                # 'anom' or 'sst'
+    type = args.dataset
     get_data(temp_data, type) # 'sst' or 'anom' for anomaly compared to 1971-2000 baseline
     plot_fig(temp_data, "Sea Surface Temp anomalies (°C) by year, vs. 1971-2000 mean"
              if type == 'anom'
@@ -311,6 +319,9 @@ def main(argv=None):
         parser.add_argument('--cache-file', type=pathlib.Path,
                             default='./sst-data-cache.json',
                             help="""Cache file to speed up future runs""")
+        parser.add_argument('--start-year', type=int,
+                            default = 2000,
+                            help="""Start year for map mode""")
         args = parser.parse_args(argv)
 
         load_cache(args.cache_file)
