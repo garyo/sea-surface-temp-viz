@@ -18,8 +18,12 @@ from matplotlib.colors import LinearSegmentedColormap
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-n_concurrent_requests = 10
+n_concurrent_requests = 15
 dpi=150
+
+# rescale x, in the range [oldmin,oldmax], into [newmin,newmax]
+def rescale(x, oldmin, oldmax, newmin, newmax):
+    return ((x-oldmin)/(oldmax-oldmin)) * (newmax-newmin) + newmin
 
 # Area of a given lat/lon square, relative to the size at the equator
 def rel_area(lat, lon):
@@ -77,7 +81,7 @@ async def get_sst_dataset(year, mo, day, session, semaphore):
         hdf = None
         try:
             print(f'Requesting data for {year}-{mo}-{day}...')
-            data = await try_fetch([url_prelim, url_final], session)
+            data = await try_fetch([url_final, url_prelim], session)
             # Use io.BytesIO to create a file-like object from the downloaded bytes
             file_obj = io.BytesIO(data)
             hdf = h5py.File(file_obj, 'r')
@@ -88,7 +92,7 @@ async def get_sst_dataset(year, mo, day, session, semaphore):
             raise
 
 # Get HDF dataset, mask out where ice > 50% and array == -999, and apply scale_factor
-# Note: does not weight samples by area.
+# Returns a masked array, so make sure to use `np.ma` functions on it.
 def get_processed_hdf_data_array(hdf, dataset_name, lat_min, lat_max):
     array = hdf[dataset_name][0][0][:][:]
     scale_factor = hdf[dataset_name].attrs["scale_factor"]
@@ -101,22 +105,19 @@ def get_processed_hdf_data_array(hdf, dataset_name, lat_min, lat_max):
     ice_mask = ice > 50
     data_mask = array == -999
     lat_mask = np.logical_or(lat < lat_min, lat > lat_max)
-    verbose = False
-    if verbose:
-        print(f'lat_mask({lat_min},{lat_max}): {lat_mask[360:365,720:725]}')
     masked_array = np.ma.array(array, mask=np.ma.mask_or(lat_mask, np.ma.mask_or(ice_mask, data_mask)))
     return masked_array * scale_factor
 
-# Gets the dataset from the given HDF
-# Returned dataset is properly masked and weighted
-def get_average_temp(hdf, dataset_name):
+def latlon_weights(hdf):
     lat = hdf['lat'][:]
     lon = hdf['lon'][:]
     (lon, lat) = np.meshgrid(lon, lat)
+    return rel_area(lat, lon)
 
+def get_average_temp(hdf, dataset_name):
     data = get_processed_hdf_data_array(hdf, dataset_name, -60, 60)
-    weighted = data * rel_area(lat, lon) # this is now 1d
-    average = np.average(weighted)
+    weights = latlon_weights(hdf)
+    average = np.ma.average(data, weights=weights)
     return average
 
 # Disk cache: entries are yyyy-mm-dd-DATASETNAME
@@ -142,15 +143,22 @@ def load_cache(path):
 
 async def get_temp_for_date(year, mo, day, dataset_name, session, semaphore, lock):
     async with lock:
-        cache_key = f'{year}-{mo:02}-{day:02}-{dataset_name}'
-        cached = temps_cache.get(cache_key)
+        def cache_key(name):
+            return f'{year}-{mo:02}-{day:02}-{name}'
+        cached = temps_cache.get(cache_key(dataset_name))
         if cached:
             # print(f"Average {dataset_name} {year}-{mo}-{day}: {cached:.4f}°C (from cache)")
             return (year, mo, day, cached)
 
     try:
         hdf = await get_sst_dataset(year, mo, day, session, semaphore)
-        t = get_average_temp(hdf, dataset_name)
+        # compute & cache both datasets
+        t_sst = get_average_temp(hdf, 'sst')
+        t_anom = get_average_temp(hdf, 'anom')
+        temps_cache[cache_key('sst')] = t_sst
+        temps_cache[cache_key('anom')] = t_anom
+        t = t_sst if dataset_name == 'sst' else t_anom
+        print(f"Average {dataset_name} {year}-{mo}-{day}: {t:.4f}°C")
         do_save = True
     except ValueError:
         t = np.nan
@@ -158,9 +166,7 @@ async def get_temp_for_date(year, mo, day, dataset_name, session, semaphore, loc
 
     if do_save:
         async with lock:
-            temps_cache[cache_key] = t
             save_cache()
-    # print(f"Average {dataset_name} {year}-{mo}-{day}: {t:.4f}°C")
     return (year, mo, day, t)
 
 def plot_globe_dataset(data, hdf, vmin, vmax, cmap, title):
@@ -188,9 +194,18 @@ def plot_globe_dataset(data, hdf, vmin, vmax, cmap, title):
     plt.title(title)
     plt.suptitle(f'Created at {datetime.datetime.now()}\nCopyright {datetime.date.today().year} Gary Oberbrunner',
                  fontsize=7, y=0.97)
+    plt.tight_layout()
     return plt
 
-async def process_date(args):
+def rescale_colormap_def_to_01(cmap):
+    # colormap is a list of pairs, each pair containing x-value and color
+    # this utility remaps the x-values into 0,1
+    vmin = cmap[0][0]
+    vmax = cmap[-1][0]
+    return [[rescale(x[0], vmin, vmax, 0, 1), *x[1:]] for x in cmap]
+
+
+async def process_map(args):
     if args.days_ago:
         date = datetime.date.today() - datetime.timedelta(days=args.days_ago)
         year = date.year
@@ -211,21 +226,32 @@ async def process_date(args):
 
     if args.dataset == 'anom':
         data = get_processed_hdf_data_array(hdf, 'anom', -90, 90)
+
         # Blue below zero (midpoint=0.5), yellow to red above. Midpoint should map to 0 temp diff.
+        cmapdef = [[-3, "darkblue"],
+                   [-0.5, "lightblue"],
+                   [0, "white"],
+                   [0.5, "yellow"],
+                   [2.5, "red"],
+                   [3, "darkred"],
+                   [3.5, "white"]]
         variance_cmap = LinearSegmentedColormap.from_list("sst_cmap",
-                                                          [[0, "white"], [0.2, "darkblue"],
-                                                           [0.45, "lightblue"], [0.5, "white"],
-                                                           [0.6, "yellow"], [0.9, "red"],
-                                                           [1.0, "darkred"]])
-        plot_globe_dataset(data, hdf, -3, 3, variance_cmap, f'{date}\nSea Surface Temp Variance from 1971–2000 Mean, °C')
+                                                          rescale_colormap_def_to_01(cmapdef))
+        plot_globe_dataset(data, hdf, -3, 3.5, variance_cmap, f'{date}\nSea Surface Temp Variance from 1971–2000 Mean, °C')
     else:
         data = get_processed_hdf_data_array(hdf, 'sst', -90, 90)
-        # white at 20°C or 0.666
+
+        # range 0-35°C
+        # white at 20°C
+        cmapdef = [[0, "darkblue"],
+                   [20, "white"],
+                   [22.5, "yellow"],
+                   [30, "red"],
+                   [32, "darkred"],
+                   [35, "white"]]
         sst_cmap = LinearSegmentedColormap.from_list("sst_cmap",
-                                                     [[0, "darkblue"], [0.666, "white"],
-                                                      [0.8, "yellow"], [0.9, "red"],
-                                                      [1.0, "darkred"]])
-        plot_globe_dataset(data, hdf, 0, 30, sst_cmap, f'{date}\nSea Surface Temp, °C')
+                                                     rescale_colormap_def_to_01(cmapdef))
+        plot_globe_dataset(data, hdf, 0, 35, sst_cmap, f'{date}\nSea Surface Temp, °C')
     if args.out:
         plt.savefig(args.out, dpi=dpi)
     else:
@@ -286,6 +312,11 @@ async def process_all(args):
         fig, ax = plt.subplots(figsize=(10, 6))
         years = np.array(sorted(list(temps.keys())))
         record = [-10000, (0, 0, 0)] # value, then year, month, day
+        # N years ago (or oldest), 0 means current
+        def years_ago(n):
+            if n >= len(years):
+                return years[0]
+            return years[-(n+1)]
         for year in years:
             y = []
             x = []
@@ -302,15 +333,15 @@ async def process_all(args):
             cmap_index = (year - years[0]) / (years[-1] - years[0])
             linewidth = 0.5
             color = year_cmap(cmap_index)
-            if year == years[-1]:
+            if year == years_ago(0):
                 color = "red"
                 linewidth = 2
-            if year == years[-2]:
+            if year == years_ago(1):
                 color = "orange"
                 linewidth = 2
-            if year == years[-3]:
+            if year == years_ago(2):
                 color = "green"
-            if year > years[-5] or year < years[2]:
+            if year > years_ago(4) or year < years[2]:
                 label = f'{year}'
             else:
                 label = None
@@ -349,6 +380,7 @@ async def process_all(args):
         plt.text(0, 0,
                  msg,
                  ha="left", va="top", transform=plt.gca().transAxes, fontsize=9)
+        plt.tight_layout()
         if args.out:
             plt.savefig(args.out, dpi=dpi)
         else:
@@ -410,10 +442,18 @@ def main(argv=None):
         dpi = args.dpi
 
         load_cache(args.cache_file)
+
+        if not args.out:
+            plt.ion          # interactive mode
+
         if args.mode == 'all':
             asyncio.run(process_all(args))
         else:
-            asyncio.run(process_date(args))
+            asyncio.run(process_map(args))
+
+        if not args.out:
+            plt.show(block=True) # run event loop til all windows closed
+
     except RuntimeError as e:
         print(e)
         return 1
