@@ -23,47 +23,23 @@ jobs:
         python sea-surface-temps.py --mode all --dataset sst --out sst-all.png
         python sea-surface-temps.py --mode all --dataset anom --out sst-all-anom.png
 
-    - name: Refresh Imgur Access Token
-      id: refresh_token
-      run: |
-        RESPONSE=$(curl --request POST \
-          --url 'https://api.imgur.com/oauth2/token' \
-          --header 'Content-Type: application/x-www-form-urlencoded' \
-          --data client_id=${{ secrets.IMGUR_CLIENT_ID }} \
-          --data client_secret=${{ secrets.IMGUR_CLIENT_SECRET }} \
-          --data refresh_token=${{ secrets.IMGUR_REFRESH_TOKEN }} \
-          --data grant_type=refresh_token)
-        echo "Response: $RESPONSE"
-        ACCESS_TOKEN=$(echo $RESPONSE | jq -r '.access_token')
-        echo "::set-output name=access_token::$ACCESS_TOKEN"
+    - name: Get current date
+      id: date
+      run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
 
-    - name: Upload images to Imgur
+    - name: Create Release
+      id: create_release
+      uses: softprops/action-gh-release@v1
       env:
-        IMGUR_CLIENT_ID: ${{ secrets.IMGUR_CLIENT_ID }}
-      run: |
-        curl --request POST \
-          --url https://api.imgur.com/3/image \
-          --header 'Authorization: Bearer ${{ steps.refresh_token.outputs.access_token }}' \
-          --form name='sst-map.png' \
-          --form title='SST Map' \
-          --form image=@"./sst-map.png" | jq .data.link |& tee sst-map.url
-        curl --request POST \
-          --url https://api.imgur.com/3/image \
-          --header 'Authorization: Bearer ${{ steps.refresh_token.outputs.access_token }}' \
-          --form name='sst-anom-map.png' \
-          --form title='SST Anomaly Map' \
-          --form image=@"./sst-anom-map.png" | jq .data.link |& tee sst-anom-map.url
-        curl --request POST \
-          --url https://api.imgur.com/3/image \
-          --header 'Authorization: Bearer ${{ steps.refresh_token.outputs.access_token }}' \
-          --form name='sst-all.png' \
-          --form title='SST Temps' \
-          --form image=@"./sst-all.png" | jq .data.link |& tee sst-all.url
-        curl --request POST \
-          --url https://api.imgur.com/3/image \
-          --header 'Authorization: Bearer ${{ steps.refresh_token.outputs.access_token }}' \
-          --form name='sst-all-anom.png' \
-          --form title='SST Anomalies' \
-          --form image=@"./sst-all-anom.png" | jq .data.link |& tee sst-all-anom.url
-        # List all upload URLs
-        for f in *.url; do echo $f; cat $f; done
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        name: ${{ steps.date.outputs.date }}
+        tag_name: ${{ steps.date.outputs.date }}
+        draft: false
+        prerelease: false
+        body: "Latest plots as of ${{ steps.date.outputs.date }}"
+        files: |
+           sst-map.png
+           sst-anom-map.png
+           sst-all.png
+           sst-all-anom.png
