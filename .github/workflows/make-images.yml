@@ -52,18 +52,18 @@ jobs:
           --header 'Authorization: Bearer ${{ steps.refresh_token.outputs.access_token }}' \
           --form name='sst-anom-map.png' \
           --form title='SST Anomaly Map' \
-          --form image=@"./sst-anom-map.png" jq .data.link |& tee sst-anom-map.url
+          --form image=@"./sst-anom-map.png" | jq .data.link |& tee sst-anom-map.url
         curl --request POST \
           --url https://api.imgur.com/3/image \
           --header 'Authorization: Bearer ${{ steps.refresh_token.outputs.access_token }}' \
           --form name='sst-all.png' \
           --form title='SST Temps' \
-          --form image=@"./sst-all.png" jq .data.link |& tee sst-all.url
+          --form image=@"./sst-all.png" | jq .data.link |& tee sst-all.url
         curl --request POST \
           --url https://api.imgur.com/3/image \
           --header 'Authorization: Bearer ${{ steps.refresh_token.outputs.access_token }}' \
           --form name='sst-all-anom.png' \
           --form title='SST Anomalies' \
-          --form image=@"./sst-all-anom.png" jq .data.link |& tee sst-all-anom.url
+          --form image=@"./sst-all-anom.png" | jq .data.link |& tee sst-all-anom.url
         # List all upload URLs
         for f in *.url; do echo $f; cat $f; done
