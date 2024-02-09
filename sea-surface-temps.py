@@ -19,6 +19,7 @@ from matplotlib.colors import LinearSegmentedColormap
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 n_concurrent_requests = 10
+dpi=150
 
 # Area of a given lat/lon square, relative to the size at the equator
 def rel_area(lat, lon):
@@ -226,7 +227,7 @@ async def process_date(args):
                                                       [1.0, "darkred"]])
         plot_globe_dataset(data, hdf, 0, 30, sst_cmap, f'{date}\nSea Surface Temp, °C')
     if args.out:
-        plt.savefig(args.out, dpi=300)
+        plt.savefig(args.out, dpi=dpi)
     else:
         plt.show()
 
@@ -349,7 +350,7 @@ async def process_all(args):
                  msg,
                  ha="left", va="top", transform=plt.gca().transAxes, fontsize=9)
         if args.out:
-            plt.savefig(args.out, dpi=300)
+            plt.savefig(args.out, dpi=dpi)
         else:
             plt.show()
 
@@ -400,7 +401,13 @@ def main(argv=None):
         parser.add_argument('--start-year', type=int,
                             default = 2000,
                             help="""Start year for map mode""")
+        parser.add_argument('--dpi', type=int,
+                            default = 150,
+                            help="""DPI for output figures (sets resolution)""")
         args = parser.parse_args(argv)
+
+        global dpi
+        dpi = args.dpi
 
         load_cache(args.cache_file)
         if args.mode == 'all':

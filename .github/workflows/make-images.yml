@@ -1,4 +1,4 @@
-name: Create Images and Upload to Imgur
+name: Create Images and Make Release
 
 on:
   workflow_dispatch:
@@ -25,7 +25,7 @@ jobs:
 
     - name: Get current date
       id: date
-      run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
+      run: echo "date=$(date +'%Y-%m-%d') >> $GITHUB_OUTPUT"
 
     - name: Create Release
       id: create_release
