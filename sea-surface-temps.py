@@ -189,9 +189,10 @@ def plot_globe_dataset(data, hdf, vmin, vmax, cmap, title):
     plt.colorbar(c, orientation='horizontal', pad=0.05)
 
     plt.title(title)
+    plt.suptitle(f'Created at {datetime.datetime.now()}', fontsize=5, y=0.97)
     return plt
 
-def process_date(args):
+async def process_date(args):
     if args.days_ago:
         date = datetime.date.today() - datetime.timedelta(days=args.days_ago)
         year = date.year
@@ -202,11 +203,13 @@ def process_date(args):
         mo = args.month
         day = args.day
     date=f'{year}-{mo:02}-{day:02}'
-    try:
-        hdf = get_sst_dataset(year, mo, day, session, semaphore)
-    except IOError:
-        print(f"Failed to get SST data for {year}-{mo}-{day}")
-        raise
+    semaphore = asyncio.Semaphore(n_concurrent_requests)
+    async with aiohttp.ClientSession() as session:
+        try:
+            hdf = await get_sst_dataset(year, mo, day, session, semaphore)
+        except ValueError:
+            print(f"Failed to get SST data for {year}-{mo}-{day}")
+            raise
 
     if args.dataset == 'anom':
         data = get_processed_hdf_data_array(hdf, 'anom', -90, 90)
@@ -379,7 +382,7 @@ def main(argv=None):
         if args.mode == 'all':
             asyncio.run(process_all(args))
         else:
-            process_date(args)
+            asyncio.run(process_date(args))
     except RuntimeError as e:
         print(e)
         return 1
