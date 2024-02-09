@@ -18,8 +18,8 @@ jobs:
 
     - name: Generate
       run: |
-        python sea-surface-temps.py --mode map --dataset sst --days-ago 1 --out sst-map.png
-        python sea-surface-temps.py --mode map --dataset anom --days-ago 1 --out sst-anom-map.png
+        python sea-surface-temps.py --mode map --dataset sst --days-ago 2 --out sst-map.png
+        python sea-surface-temps.py --mode map --dataset anom --days-ago 2 --out sst-anom-map.png
         python sea-surface-temps.py --mode all --dataset sst --out sst-all.png
         python sea-surface-temps.py --mode all --dataset anom --out sst-all-anom.png
 
