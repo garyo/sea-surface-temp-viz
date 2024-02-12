@@ -53,10 +53,11 @@ Here are the latest files, auto-produced daily by a github action. You can use t
 - https://github.com/garyo/sea-surface-temp-viz/releases/latest/download/sst-all.png
 - https://github.com/garyo/sea-surface-temp-viz/releases/latest/download/sst-all-anom.png
 
-![SST temp map](https://github.com/garyo/sea-surface-temp-viz/releases/latest/download/sst-map.png)
-![SST anomaly map](https://github.com/garyo/sea-surface-temp-viz/releases/latest/download/sst-anom-map.png)
+
 ![SST temp graph](https://github.com/garyo/sea-surface-temp-viz/releases/latest/download/sst-all.png)
 ![SST anomaly graph](https://github.com/garyo/sea-surface-temp-viz/releases/latest/download/sst-all-anom.png)
+![SST temp map](https://github.com/garyo/sea-surface-temp-viz/releases/latest/download/sst-map.png)
+![SST anomaly map](https://github.com/garyo/sea-surface-temp-viz/releases/latest/download/sst-anom-map.png)
 
 For older examples, see the `doc` subdir.
 
