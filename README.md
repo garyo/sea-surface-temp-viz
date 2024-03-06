@@ -46,7 +46,9 @@ Several things stand out from the time series graphs:
 
 For technical details on data sources and how this code works, see [below](#technical-details).
 
-Here are the latest files, auto-produced daily by a github action. You can use these directly on the web via these URLs:
+Here are the latest files, auto-produced daily by a github action (run
+daily at 15:05 UTC, just after the daily data update from NOAA). You can use
+these directly on the web via these URLs:
 
 - https://github.com/garyo/sea-surface-temp-viz/releases/latest/download/sst-map.png
 - https://github.com/garyo/sea-surface-temp-viz/releases/latest/download/sst-anom-map.png
