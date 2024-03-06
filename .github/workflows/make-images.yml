@@ -3,7 +3,8 @@ name: Create Images and Make Release
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 12 * * *'
+    # Data is updated at 10am EST = 15:00 hrs UTC, so run just after that
+    - cron: '5 15 * * *'
 jobs:
   upload-image:
     runs-on: ubuntu-latest
@@ -18,8 +19,8 @@ jobs:
 
     - name: Generate
       run: |
-        python sea-surface-temps.py --mode map --dataset sst --days-ago 2 --out sst-map.png
-        python sea-surface-temps.py --mode map --dataset anom --days-ago 2 --out sst-anom-map.png
+        python sea-surface-temps.py --mode map --dataset sst --days-ago 1 --out sst-map.png
+        python sea-surface-temps.py --mode map --dataset anom --days-ago 1 --out sst-anom-map.png
         python sea-surface-temps.py --mode all --dataset sst --out sst-all.png
         python sea-surface-temps.py --mode all --dataset anom --out sst-all-anom.png
 
