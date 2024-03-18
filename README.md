@@ -1,6 +1,6 @@
-# Sea Surface Temp Visualization
+# Sea Surface Temperature Visualization
 
-Sea Surface Temperatures are a key indicator of climate change. The
+Sea surface temperatures are a key indicator of climate change. The
 world's oceans are a significant reservoir of heat, warming and
 cooling much more slowly than the atmosphere. Ocean heat drives larger
 storms, adds more moisture to the air above the ocean, and affects sea
