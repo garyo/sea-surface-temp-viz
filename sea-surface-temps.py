@@ -18,7 +18,7 @@ from matplotlib.colors import LinearSegmentedColormap
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-n_concurrent_requests = 15
+n_concurrent_requests = 20
 dpi=150
 
 # rescale x, in the range [oldmin,oldmax], into [newmin,newmax]
@@ -88,7 +88,7 @@ async def get_sst_dataset(year, mo, day, session, semaphore):
             print(f'Got hdf from {year}-{mo}-{day}')
             return hdf
         except ValueError:
-            print(f"Failed to download {year}-{mo}0-{day}.")
+            print(f"Failed to download {year}-{mo}-{day}.")
             raise
 
 # Get HDF dataset, mask out where ice > 50% and array == -999, and apply scale_factor

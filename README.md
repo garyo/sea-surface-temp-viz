@@ -86,3 +86,10 @@ cache in `./sst-data-cache.json`. If you want to re-run from scratch,
 just delete that file. It does process datasets in parallel using
 `asyncio` but to get all the global datasets since 1981 takes around
 20 minutes on my machine.
+
+You can also use the included [prune-cache.py](./prune-cache.py)
+utility to prune out the most recent N days from the cache so those
+will be re-fetched on the next run. This is useful because sometimes
+the dataset's recent data is re-analyzed to fix data quality issues.
+The automatic updates of the images above are set to always re-fetch
+the most recent 90 days of data.

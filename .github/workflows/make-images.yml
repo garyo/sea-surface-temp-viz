@@ -19,6 +19,7 @@ jobs:
 
     - name: Generate
       run: |
+        python prune-cache.py --inplace --days 90 # Re-fetch most recent 90 days, in case of reanalysis
         python sea-surface-temps.py --mode map --dataset sst --days-ago 1 --out sst-map.png
         python sea-surface-temps.py --mode map --dataset anom --days-ago 1 --out sst-anom-map.png
         python sea-surface-temps.py --mode all --dataset sst --out sst-all.png
