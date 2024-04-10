@@ -26,8 +26,8 @@ jobs:
     # Maps: OK if these fail; we're looking for yesterday, might not be there yet.
     - name: Generate maps
       run: |
-        python sea-surface-temps.py --mode map --dataset sst --days-ago 1 --out sst-map.png || true
-        python sea-surface-temps.py --mode map --dataset anom --days-ago 1 --out sst-anom-map.png || true
+        python sea-surface-temps.py --mode map --dataset sst --days-ago 2 --out sst-map.png || true
+        python sea-surface-temps.py --mode map --dataset anom --days-ago 2 --out sst-anom-map.png || true
 
     - name: Get current date
       id: date
