@@ -25,7 +25,7 @@ def prune_cache_file(infile: str, outfile: str, days_before_today):
             pruned[key] = value
 
     with open(outfile, 'w') as dstf:
-        json.dump(pruned, dstf)
+        json.dump(pruned, dstf, indent=1, sort_keys=True)
 
 def main(argv=None):
     temps_cache_file='./sst-data-cache.json'
