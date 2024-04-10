@@ -3,8 +3,8 @@ name: Create Images and Make Release
 on:
   workflow_dispatch:
   schedule:
-    # Data is updated at 10am EST = 15:00 hrs UTC, so run just after that
-    - cron: '5 15 * * *'
+    # Data is updated at 9am ET = 14:00 hrs UTC, so run just after that
+    - cron: '5 14 * * *'
 jobs:
   upload-image:
     runs-on: ubuntu-latest
