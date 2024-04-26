@@ -93,7 +93,7 @@ async def get_sst_dataset(year, mo, day, session, semaphore):
 
 # Get HDF dataset, mask out where ice > 50% and array == -999, and apply scale_factor
 # Returns a masked array, so make sure to use `np.ma` functions on it.
-def get_processed_hdf_data_array(hdf, dataset_name, lat_min, lat_max):
+def get_processed_hdf_data_array(hdf, dataset_name, lat_min, lat_max, show='default'):
     array = hdf[dataset_name][0][0][:][:]
     scale_factor = hdf[dataset_name].attrs["scale_factor"]
     assert(hdf[dataset_name].attrs['add_offset'] == 0)
@@ -103,10 +103,16 @@ def get_processed_hdf_data_array(hdf, dataset_name, lat_min, lat_max):
     ice = hdf['ice'][0][0][:][:]
     # note: mask True means invalid data (so "masked out")
     ice_mask = ice > 50
+    # array == -999 indicates land rather than sea
     data_mask = array == -999
     lat_mask = np.logical_or(lat < lat_min, lat > lat_max)
-    masked_array = np.ma.array(array, mask=np.ma.mask_or(lat_mask, np.ma.mask_or(ice_mask, data_mask)))
-    return masked_array * scale_factor
+    if show == 'ice':
+        return ice
+    if show == 'land':
+        return array == -999
+    else:                       # default, show dataset
+        masked_array = np.ma.array(array, mask=np.ma.mask_or(lat_mask, np.ma.mask_or(ice_mask, data_mask)))
+        return masked_array * scale_factor
 
 def latlon_weights(hdf):
     lat = hdf['lat'][:]
@@ -225,7 +231,7 @@ async def process_map(args):
             raise
 
     if args.dataset == 'anom':
-        data = get_processed_hdf_data_array(hdf, 'anom', -90, 90)
+        data = get_processed_hdf_data_array(hdf, 'anom', -90, 90, args.show)
 
         # Blue below zero (midpoint=0.5), yellow to red above. Midpoint should map to 0 temp diff.
         cmapdef = [[-3, "darkblue"],
@@ -239,7 +245,7 @@ async def process_map(args):
                                                           rescale_colormap_def_to_01(cmapdef))
         plot_globe_dataset(data, hdf, -3, 3.5, variance_cmap, f'{date}\nSea Surface Temp Variance from 1971–2000 Mean, °C')
     else:
-        data = get_processed_hdf_data_array(hdf, 'sst', -90, 90)
+        data = get_processed_hdf_data_array(hdf, 'sst', -90, 90, args.show)
 
         # range 0-35°C
         # white at 20°C
@@ -413,6 +419,9 @@ def main(argv=None):
         parser.add_argument('--mode', '-m', choices=('all', 'map'),
                             default='all',
                             help="""Mode: all=all time, map=map of today""")
+        parser.add_argument('--show', '-s', choices=('default', 'ice', 'land'),
+                            default='default',
+                            help="""Show: default=temps, ice=ice mask, land=land mask (only in map mode)""")
         parser.add_argument('--year', '-Y', type=int,
                             default=datetime.date.today().year,
                             help="""Year for map mode""")
