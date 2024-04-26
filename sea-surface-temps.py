@@ -26,19 +26,11 @@ def rescale(x, oldmin, oldmax, newmin, newmax):
     return ((x-oldmin)/(oldmax-oldmin)) * (newmax-newmin) + newmin
 
 # Area of a given lat/lon square, relative to the size at the equator
+# Varies as cos(latitude)
 def rel_area(lat, lon):
     import math
-
-    # Constants
-    degree_to_radians = math.pi / 180  # Conversion factor from degrees to radians
-    latitude_radians = lat * degree_to_radians
-    square_area_at_equator = 1 / 360 / 360 # 1 degree square of unit sphere
-    # Width per degree of latitude (constant)
-    width_per_degree_latitude = 1 / 360
-    # Width per degree of longitude (varies with latitude)
-    width_per_degree_longitude = np.cos(latitude_radians) * width_per_degree_latitude
-    # Area of a square degree at the given latitude
-    return width_per_degree_latitude * width_per_degree_longitude / square_area_at_equator
+    latitude_radians = np.radians(lat)
+    return np.cos(latitude_radians)
 
 class NumpyArrayEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -110,6 +102,8 @@ def get_processed_hdf_data_array(hdf, dataset_name, lat_min, lat_max, show='defa
         return ice
     if show == 'land':
         return array == -999
+    if show == 'area':
+        return rel_area(lat, lon)
     else:                       # default, show dataset
         masked_array = np.ma.array(array, mask=np.ma.mask_or(lat_mask, np.ma.mask_or(ice_mask, data_mask)))
         return masked_array * scale_factor
@@ -419,9 +413,9 @@ def main(argv=None):
         parser.add_argument('--mode', '-m', choices=('all', 'map'),
                             default='all',
                             help="""Mode: all=all time, map=map of today""")
-        parser.add_argument('--show', '-s', choices=('default', 'ice', 'land'),
+        parser.add_argument('--show', '-s', choices=('default', 'ice', 'land', 'area'),
                             default='default',
-                            help="""Show: default=temps, ice=ice mask, land=land mask (only in map mode)""")
+                            help="""Show: default=temps, ice=ice mask, land=land mask (only in map mode), area=rel cell area""")
         parser.add_argument('--year', '-Y', type=int,
                             default=datetime.date.today().year,
                             help="""Year for map mode""")
