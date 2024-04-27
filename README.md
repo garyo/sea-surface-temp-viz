@@ -39,7 +39,7 @@ Several things stand out from the time series graphs:
   slightly affected by the 2020 [regulation of
   sulfur](https://www.imo.org/en/MediaCentre/PressBriefings/pages/02-IMO-2020.aspx)
   in marine fuels, which had been masking temperature rises.)
-- The all-time record for temperature was set in Feb 2024, and the
+- The all-time record for temperature was set in April 2024, and the
   all-time record for temperature variance from the mean was set in
   January 2024. Both records are likely to be broken as 2024
   progresses.
