@@ -20,8 +20,8 @@ jobs:
     - name: Generate graphs
       run: |
         python prune-cache.py --inplace --days 90 # Re-fetch most recent 90 days, in case of reanalysis
-        python sea-surface-temps.py --mode all --dataset sst --out sst-all.png
-        python sea-surface-temps.py --mode all --dataset anom --out sst-all-anom.png
+        python sea-surface-temps.py --mode graph --dataset sst --out sst-all.png
+        python sea-surface-temps.py --mode graph --dataset anom --out sst-all-anom.png
 
     # Maps: OK if these fail; we're looking for yesterday, might not be there yet.
     - name: Generate maps

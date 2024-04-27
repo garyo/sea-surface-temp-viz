@@ -46,6 +46,17 @@ Several things stand out from the time series graphs:
 
 For technical details on data sources and how this code works, see [below](#technical-details).
 
+**NOTE**: As of April 27, 2024, the time-series graphs do _not_ mask
+out cells with ice > 50%. After some discussion with the folks at
+[Climate Reanalyzer](https://climatereanalyzer.com), we noticed that
+on some dates, the original dataset from NOAA is missing the ice map
+(it's false everywhere). And further, masking out ice cells did not
+seem scientifically reasonable. This change does significantly affect
+record temp dates. You can see all the historical graphs on this site,
+to compare the results before and after this change. The python code
+can optionally still use ice masking if you paxs the `-i` command-line
+argument.
+
 Here are the latest files, auto-produced daily by a github action (run
 daily at 15:05 UTC, just after the daily data update from NOAA). You can use
 these directly on the web via these URLs:
@@ -78,7 +89,7 @@ temperature anomaly compared to the historical mean for that date.
 It processes those datasets into maps for any given day, or
 line charts with temp per day for the entire time period. The processing steps include:
 - limiting to +/- 60° latitude, to ignore the polar regions
-- removing cells containing > 50% ice cover
+- (optionally) removing cells containing > 50% ice cover (off by default since 2024-04-27)
 - weighting each cell by its actual area (cells closer to the poles are smaller)
 
 Because it takes a while to download all the datasets, it keeps a disk

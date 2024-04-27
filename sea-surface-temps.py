@@ -85,15 +85,18 @@ async def get_sst_dataset(year, mo, day, session, semaphore):
 
 # Get HDF dataset, mask out where ice > 50% and array == -999, and apply scale_factor
 # Returns a masked array, so make sure to use `np.ma` functions on it.
-def get_processed_hdf_data_array(hdf, dataset_name, lat_min, lat_max, show='default'):
+def get_processed_hdf_data_array(hdf, dataset_name, lat_min, lat_max, use_ice_mask=False, show='default'):
     array = hdf[dataset_name][0][0][:][:]
     scale_factor = hdf[dataset_name].attrs["scale_factor"]
     assert(hdf[dataset_name].attrs['add_offset'] == 0)
     lat = hdf['lat'][:]
     lon = hdf['lon'][:]
     (lon, lat) = np.meshgrid(lon, lat)
-    ice = hdf['ice'][0][0][:][:]
     # note: mask True means invalid data (so "masked out")
+    if use_ice_mask:
+        ice = hdf['ice'][0][0][:][:]
+    else:
+        ice = False
     ice_mask = ice > 50
     # array == -999 indicates land rather than sea
     data_mask = array == -999
@@ -104,7 +107,7 @@ def get_processed_hdf_data_array(hdf, dataset_name, lat_min, lat_max, show='defa
         return array == -999
     if show == 'area':
         return rel_area(lat, lon)
-    else:                       # default, show dataset
+    else: # default: show dataset
         masked_array = np.ma.array(array, mask=np.ma.mask_or(lat_mask, np.ma.mask_or(ice_mask, data_mask)))
         return masked_array * scale_factor
 
@@ -114,8 +117,8 @@ def latlon_weights(hdf):
     (lon, lat) = np.meshgrid(lon, lat)
     return rel_area(lat, lon)
 
-def get_average_temp(hdf, dataset_name):
-    data = get_processed_hdf_data_array(hdf, dataset_name, -60, 60)
+def get_average_temp(hdf, dataset_name, use_ice_mask):
+    data = get_processed_hdf_data_array(hdf, dataset_name, -60, 60, use_ice_mask)
     weights = latlon_weights(hdf)
     average = np.ma.average(data, weights=weights)
     return average
@@ -141,7 +144,7 @@ def load_cache(path):
     except IOError:
         temps_cache = {}
 
-async def get_temp_for_date(year, mo, day, dataset_name, session, semaphore, lock):
+async def get_temp_for_date(year, mo, day, dataset_name, use_ice_mask, session, semaphore, lock):
     async with lock:
         def cache_key(name):
             return f'{year}-{mo:02}-{day:02}-{name}'
@@ -153,8 +156,8 @@ async def get_temp_for_date(year, mo, day, dataset_name, session, semaphore, loc
     try:
         hdf = await get_sst_dataset(year, mo, day, session, semaphore)
         # compute & cache both datasets
-        t_sst = get_average_temp(hdf, 'sst')
-        t_anom = get_average_temp(hdf, 'anom')
+        t_sst = get_average_temp(hdf, 'sst', use_ice_mask)
+        t_anom = get_average_temp(hdf, 'anom', use_ice_mask)
         temps_cache[cache_key('sst')] = t_sst
         temps_cache[cache_key('anom')] = t_anom
         t = t_sst if dataset_name == 'sst' else t_anom
@@ -225,7 +228,7 @@ async def process_map(args):
             raise
 
     if args.dataset == 'anom':
-        data = get_processed_hdf_data_array(hdf, 'anom', -90, 90, args.show)
+        data = get_processed_hdf_data_array(hdf, 'anom', -90, 90, args.ice, args.show)
 
         # Blue below zero (midpoint=0.5), yellow to red above. Midpoint should map to 0 temp diff.
         cmapdef = [[-3, "darkblue"],
@@ -239,7 +242,7 @@ async def process_map(args):
                                                           rescale_colormap_def_to_01(cmapdef))
         plot_globe_dataset(data, hdf, -3, 3.5, variance_cmap, f'{date}\nSea Surface Temp Variance from 1971–2000 Mean, °C')
     else:
-        data = get_processed_hdf_data_array(hdf, 'sst', -90, 90, args.show)
+        data = get_processed_hdf_data_array(hdf, 'sst', -90, 90, args.ice, args.show)
 
         # range 0-35°C
         # white at 20°C
@@ -286,7 +289,7 @@ async def process_all(args):
                     if datetime.date(year, mo, day) > datetime.date.today():
                         continue
                     try:
-                        tasks.append(asyncio.create_task(get_temp_for_date(year, mo, day, dataset_name, session, semaphore, lock)))
+                        tasks.append(asyncio.create_task(get_temp_for_date(year, mo, day, dataset_name, args.ice, session, semaphore, lock)))
                     except IOError:
                         print(f"Skipping {year}-{mo}-{day}: failed to get data.")
                         pass
@@ -308,7 +311,7 @@ async def process_all(args):
     def ymd_to_year_day(year, mo, day):
         return datetime.date(year, mo, day).timetuple().tm_yday - 1
 
-    def plot_fig(temps, title):
+    def plot_fig(temps, title, use_ice_mask):
         fig, ax = plt.subplots(figsize=(10, 6))
         years = np.array(sorted(list(temps.keys())))
         record = [-10000, (0, 0, 0)] # value, then year, month, day
@@ -372,9 +375,10 @@ async def process_all(args):
         plt.legend(loc='lower right')
         plt.xticks([])
         plt.grid(axis='y')
-        msg = """
+        ice_msg = ", ignoring ice > 50%" if use_ice_mask else ""
+        msg = f"""
         Data from www.ncei.noaa.gov/data/sea-surface-temperature-optimum-interpolation/v2.1/access/avhrr
-        All samples weighted by grid size, 60°N to 60°S, ignoring ice > 50%.
+        All samples weighted by grid size, 60°N to 60°S{ice_msg}.
         See https://www.ncei.noaa.gov/products/climate-data-records/sea-surface-temperature-optimum-interpolation
         """
         plt.text(0, 0,
@@ -394,7 +398,7 @@ async def process_all(args):
 
     plot_fig(temp_data_by_date,
              "Global Sea Surface Temp anomalies (°C) by year, vs. 1971-2000 mean" if type == 'anom'
-             else "Global Sea Surface Temps (°C) by year")
+             else "Global Sea Surface Temps (°C) by year", args.ice)
 
 
 def main(argv=None):
@@ -410,12 +414,14 @@ def main(argv=None):
         parser.add_argument('--dataset', '-d', choices=('anom', 'sst'),
                             default='anom',
                             help="""Dataset: sst=temperatures, anom=anomalies vs. mean""")
-        parser.add_argument('--mode', '-m', choices=('all', 'map'),
-                            default='all',
-                            help="""Mode: all=all time, map=map of today""")
+        parser.add_argument('--mode', '-m', choices=('graph', 'map'),
+                            default='graph',
+                            help="""Mode: graph=graph of all time, map=map of today""")
         parser.add_argument('--show', '-s', choices=('default', 'ice', 'land', 'area'),
                             default='default',
                             help="""Show: default=temps, ice=ice mask, land=land mask (only in map mode), area=rel cell area""")
+        parser.add_argument('--ice', '-i', type=bool,
+                            help="""Mask cells with ice>50%""")
         parser.add_argument('--year', '-Y', type=int,
                             default=datetime.date.today().year,
                             help="""Year for map mode""")
@@ -449,7 +455,7 @@ def main(argv=None):
         if not args.out:
             plt.ion          # interactive mode
 
-        if args.mode == 'all':
+        if args.mode == 'graph':
             asyncio.run(process_all(args))
         else:
             asyncio.run(process_map(args))
