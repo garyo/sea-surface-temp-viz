@@ -54,7 +54,7 @@ on some dates, the original dataset from NOAA is missing the ice map
 seem scientifically reasonable. This change does significantly affect
 record temp dates. You can see all the historical graphs on this site,
 to compare the results before and after this change. The python code
-can optionally still use ice masking if you paxs the `-i` command-line
+can optionally still use ice masking if you pass the `-i` command-line
 argument.
 
 Here are the latest files, auto-produced daily by a github action (run
