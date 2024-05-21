@@ -421,7 +421,7 @@ def main(argv=None):
                             default='default',
                             help="""Show: default=temps, ice=ice mask, land=land mask (only in map mode), area=rel cell area""")
         parser.add_argument('--ice', '-i', type=bool,
-                            help="""Mask cells with ice>50%""")
+                            help="""Mask cells with ice>50%%""")
         parser.add_argument('--year', '-Y', type=int,
                             default=datetime.date.today().year,
                             help="""Year for map mode""")
