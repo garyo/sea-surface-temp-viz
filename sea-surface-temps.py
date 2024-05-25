@@ -175,7 +175,7 @@ async def get_temp_for_date(year, mo, day, dataset_name, use_ice_mask, session, 
 def plot_globe_dataset(data, hdf, vmin, vmax, cmap, title):
     # Set up the map projection and figure
     # 'mollweide' is good
-    fig, ax = plt.subplots(figsize=(10, 7), subplot_kw={'projection': 'mollweide'})
+    _, ax = plt.subplots(figsize=(10, 7), subplot_kw={'projection': 'mollweide'})
 
     ax.grid(visible=True)
 
@@ -200,6 +200,9 @@ def plot_globe_dataset(data, hdf, vmin, vmax, cmap, title):
     plt.tight_layout()
     return plt
 
+def plot_equirect_dataset(data, vmin, vmax, cmap, outfile):
+    plt.imsave(outfile, data, cmap=cmap, vmin=vmin, vmax=vmax, origin='lower')
+
 def rescale_colormap_def_to_01(cmap):
     # colormap is a list of pairs, each pair containing x-value and color
     # this utility remaps the x-values into 0,1
@@ -208,6 +211,7 @@ def rescale_colormap_def_to_01(cmap):
     return [[rescale(x[0], vmin, vmax, 0, 1), *x[1:]] for x in cmap]
 
 
+# Create map or equirectangular texture
 async def process_map(args):
     if args.days_ago:
         date = datetime.date.today() - datetime.timedelta(days=args.days_ago)
@@ -240,7 +244,10 @@ async def process_map(args):
                    [3.5, "white"]]
         variance_cmap = LinearSegmentedColormap.from_list("sst_cmap",
                                                           rescale_colormap_def_to_01(cmapdef))
-        plot_globe_dataset(data, hdf, -3, 3.5, variance_cmap, f'{date}\nSea Surface Temp Variance from 1971–2000 Mean, °C')
+        if args.mode == 'map':
+            plot_globe_dataset(data, hdf, -3, 3.5, variance_cmap, f'{date}\nSea Surface Temp Variance from 1971–2000 Mean, °C')
+        else:
+            plot_equirect_dataset(data, -3, 3.5, variance_cmap, args.out);
     else:
         data = get_processed_hdf_data_array(hdf, 'sst', -90, 90, args.ice, args.show)
 
@@ -254,9 +261,14 @@ async def process_map(args):
                    [35, "white"]]
         sst_cmap = LinearSegmentedColormap.from_list("sst_cmap",
                                                      rescale_colormap_def_to_01(cmapdef))
-        plot_globe_dataset(data, hdf, 0, 35, sst_cmap, f'{date}\nSea Surface Temp, °C')
-    if args.out:
+        if args.mode == 'map':
+            plot_globe_dataset(data, hdf, 0, 35, sst_cmap, f'{date}\nSea Surface Temp, °C')
+        else:
+            plot_equirect_dataset(data, 0, 35, sst_cmap, args.out);
+    if args.out and args.mode == 'map':
         plt.savefig(args.out, dpi=dpi)
+    elif args.out and args.mode == 'texture':
+        pass                    # already saved
     else:
         plt.show()
 
@@ -414,9 +426,9 @@ def main(argv=None):
         parser.add_argument('--dataset', '-d', choices=('anom', 'sst'),
                             default='anom',
                             help="""Dataset: sst=temperatures, anom=anomalies vs. mean""")
-        parser.add_argument('--mode', '-m', choices=('graph', 'map'),
+        parser.add_argument('--mode', '-m', choices=('graph', 'map', 'texture'),
                             default='graph',
-                            help="""Mode: graph=graph of all time, map=map of today""")
+                            help="""Mode: graph=graph of all time, map=map of today, texture=equirect texture for globe""")
         parser.add_argument('--show', '-s', choices=('default', 'ice', 'land', 'area'),
                             default='default',
                             help="""Show: default=temps, ice=ice mask, land=land mask (only in map mode), area=rel cell area""")
@@ -457,7 +469,7 @@ def main(argv=None):
 
         if args.mode == 'graph':
             asyncio.run(process_all(args))
-        else:
+        else:                   # map or texture
             asyncio.run(process_map(args))
 
         if not args.out:
