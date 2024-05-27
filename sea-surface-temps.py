@@ -211,6 +211,15 @@ def rescale_colormap_def_to_01(cmap):
     return [[rescale(x[0], vmin, vmax, 0, 1), *x[1:]] for x in cmap]
 
 
+def save_cmap(cmapdef, outfile):
+    cmap_json = json.dumps(cmapdef)
+    p = pathlib.Path(outfile)
+    dir = p.parent
+    name = p.stem
+    outfile = dir / (name + "-cmap.json")
+    outfile.write_text(cmap_json)
+
+
 # Create map or equirectangular texture
 async def process_map(args):
     if args.days_ago:
@@ -244,11 +253,18 @@ async def process_map(args):
                    [3.5, "white"]]
         variance_cmap = LinearSegmentedColormap.from_list("sst_cmap",
                                                           rescale_colormap_def_to_01(cmapdef))
+        domain_min = cmapdef[0][0]
+        domain_max = cmapdef[-1][0]
         if args.mode == 'map':
-            plot_globe_dataset(data, hdf, -3, 3.5, variance_cmap, f'{date}\nSea Surface Temp Variance from 1971–2000 Mean, °C')
+            plot_globe_dataset(data, hdf, domain_min, domain_max, variance_cmap, f'{date}\nSea Surface Temp Variance from 1971–2000 Mean, °C')
         else:
-            plot_equirect_dataset(data, -3, 3.5, variance_cmap, args.out);
+            # Plot an equirectangular texture that can be used on a 3d sphere,
+            # and save the colormap definition to a file so that can be used in the sphere visualization
+            plot_equirect_dataset(data, domain_min, domain_max, variance_cmap, args.out);
+            if args.out:
+                save_cmap(cmapdef, args.out)
     else:
+
         data = get_processed_hdf_data_array(hdf, 'sst', -90, 90, args.ice, args.show)
 
         # range 0-35°C
@@ -261,10 +277,15 @@ async def process_map(args):
                    [35, "white"]]
         sst_cmap = LinearSegmentedColormap.from_list("sst_cmap",
                                                      rescale_colormap_def_to_01(cmapdef))
+        domain_min = cmapdef[0][0]
+        domain_max = cmapdef[-1][0]
         if args.mode == 'map':
-            plot_globe_dataset(data, hdf, 0, 35, sst_cmap, f'{date}\nSea Surface Temp, °C')
+            plot_globe_dataset(data, hdf, domain_min, domain_max, sst_cmap, f'{date}\nSea Surface Temp, °C')
         else:
-            plot_equirect_dataset(data, 0, 35, sst_cmap, args.out);
+            plot_equirect_dataset(data, domain_min, domain_max, sst_cmap, args.out);
+            if args.out:
+                save_cmap(cmapdef, args.out)
+
     if args.out and args.mode == 'map':
         plt.savefig(args.out, dpi=dpi)
     elif args.out and args.mode == 'texture':
