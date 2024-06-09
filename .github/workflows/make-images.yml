@@ -7,7 +7,7 @@ on:
     # min hr dom mo dow
     - cron: '15 13 * * *'
 jobs:
-  upload-image:
+  make-images:
     runs-on: ubuntu-latest
 
     steps:
@@ -61,3 +61,12 @@ jobs:
            sst-temp-anomaly-equirect.png
            sst-temp-anomaly-equirect-cmap.json
                       
+    - name: Copy plot files to AWS S3 bucket
+      uses: prewk/s3-cp-action@v2
+      with:
+        aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        source: '.'
+        dest: 's3://climate-change-assets/sea-surface-temp/'
+        # send only the files we need
+        flags: --exclude "*" --include "sst-temp-*"
