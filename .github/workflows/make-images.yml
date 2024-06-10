@@ -33,8 +33,10 @@ jobs:
     # This generates textures (.png) and associated colormap json files (-cmap.json)
     - name: Generate map textures
       run: |
-        python sea-surface-temps.py --mode texture --dataset sst --days-ago 2 --out sst-temp-equirect.png || true
-        python sea-surface-temps.py --mode texture --dataset anom --days-ago 2 --out sst-temp-anomaly-equirect.png || true
+        rm -rf ./out
+        mkdir -p ./out
+        python sea-surface-temps.py --mode texture --dataset sst --days-ago 2 --out out/sst-temp-equirect.png || true
+        python sea-surface-temps.py --mode texture --dataset anom --days-ago 2 --out out/sst-temp-anomaly-equirect.png || true
 
     - name: Get current date
       id: date
@@ -66,7 +68,7 @@ jobs:
       with:
         aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        source: '.'
+        source: './out'
         dest: 's3://climate-change-assets/sea-surface-temp/'
         # send only the files we need
-        flags: --exclude "*" --include "sst-temp-*"
+        # flags: --exclude "*" --include "sst-temp-*"
