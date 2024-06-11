@@ -30,7 +30,7 @@ jobs:
         python sea-surface-temps.py --mode map --dataset sst --days-ago 2 --out sst-map.png || true
         python sea-surface-temps.py --mode map --dataset anom --days-ago 2 --out sst-anom-map.png || true
 
-    # This generates textures (.png) and associated colormap json files (-cmap.json)
+    # This generates textures (.png) and associated colormap json files (-metadata.json)
     - name: Generate map textures
       run: |
         rm -rf ./maps
@@ -59,9 +59,9 @@ jobs:
            sst-all.png
            sst-all-anom.png
            maps/sst-temp-equirect.png
-           maps/sst-temp-equirect-cmap.json
+           maps/sst-temp-equirect-metadata.json
            maps/sst-temp-anomaly-equirect.png
-           maps/sst-temp-anomaly-equirect-cmap.json
+           maps/sst-temp-anomaly-equirect-metadata.json
                       
     - name: Copy plot files to AWS S3 bucket
       uses: prewk/s3-cp-action@v2
