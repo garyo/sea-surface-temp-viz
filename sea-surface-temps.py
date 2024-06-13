@@ -250,8 +250,9 @@ async def process_map(args):
                    [0.5, "yellow"],
                    [2.5, "red"],
                    [3, "darkred"],
-                   [3.5, "white"],
-                   [4.0, "gray"],
+                   [4.0, "white"],
+                   [5.0, "gray"],
+                   [7.0, "red"],
                    ]
         variance_cmap = LinearSegmentedColormap.from_list("sst_cmap",
                                                           rescale_colormap_def_to_01(cmapdef))
