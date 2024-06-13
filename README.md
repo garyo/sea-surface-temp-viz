@@ -25,6 +25,13 @@ the variance or "anomaly" from the mean value from the 1971-2000 time
 period. The anomalies are computed cell by cell by subtracting the
 mean value at that grid cell over the 1971-2000 period.
 
+![SST temp graph](https://github.com/garyo/sea-surface-temp-viz/releases/latest/download/sst-all.png)
+![SST anomaly graph](https://github.com/garyo/sea-surface-temp-viz/releases/latest/download/sst-all-anom.png)
+![SST temp map](https://github.com/garyo/sea-surface-temp-viz/releases/latest/download/sst-map.png)
+![SST anomaly map](https://github.com/garyo/sea-surface-temp-viz/releases/latest/download/sst-anom-map.png)
+
+To see the above maps on a 3d interactive globe, visit https://globe-viz.oberbrunner.com.
+
 Several things stand out from the time series graphs:
 
 - Ocean temperatures have been steadily increasing over the 40-year
@@ -66,11 +73,6 @@ these directly on the web via these URLs:
 - https://github.com/garyo/sea-surface-temp-viz/releases/latest/download/sst-all.png
 - https://github.com/garyo/sea-surface-temp-viz/releases/latest/download/sst-all-anom.png
 
-
-![SST temp graph](https://github.com/garyo/sea-surface-temp-viz/releases/latest/download/sst-all.png)
-![SST anomaly graph](https://github.com/garyo/sea-surface-temp-viz/releases/latest/download/sst-all-anom.png)
-![SST temp map](https://github.com/garyo/sea-surface-temp-viz/releases/latest/download/sst-map.png)
-![SST anomaly map](https://github.com/garyo/sea-surface-temp-viz/releases/latest/download/sst-anom-map.png)
 
 For older examples, see the `doc` subdir.
 
