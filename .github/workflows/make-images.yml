@@ -16,7 +16,7 @@ jobs:
     - name: Install dependencies
       run: |
         python --version
-        python -m pip --no-binary :all: install --upgrade pip
+        python -m pip install --upgrade pip
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
     - name: Generate graphs
