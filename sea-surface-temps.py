@@ -429,7 +429,7 @@ async def process_all(args):
         return datetime.date(year, mo, day).timetuple().tm_yday - 1
 
     def plot_fig(temps, title, use_ice_mask):
-        fig, ax = plt.subplots(figsize=(10, 6))
+        fig, ax = plt.subplots(figsize=(14, 8))
         years = np.array(sorted(list(temps.keys())))
         record = [-10000, (0, 0, 0)]  # value, then year, month, day
 
@@ -460,7 +460,7 @@ async def process_all(args):
                 linewidth = 2
             if year == years_ago(1):
                 color = "orange"
-                linewidth = 2
+                linewidth = 1.5
             if year == years_ago(2):
                 color = "green"
             if year > years_ago(4) or year < years[2]:
