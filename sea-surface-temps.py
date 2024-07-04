@@ -425,11 +425,14 @@ async def process_all(args):
         return start_date + datetime.timedelta(days=day)  # when day=0, it's Jan 1st
 
     # Convert year, month, day to 0-based day number
-    def ymd_to_year_day(year, mo, day):
+    # ONLY USE THIS FOR GRAPHS; it aligns all days after Feb with leap years.
+    def ymd_to_year_day_for_graph(year, mo, day):
+        while not calendar.isleap(year):
+            year += 1           # find the next leap year
         return datetime.date(year, mo, day).timetuple().tm_yday - 1
 
     def plot_fig(temps, title, use_ice_mask):
-        fig, ax = plt.subplots(figsize=(14, 8))
+        _, ax = plt.subplots(figsize=(14, 8))
         years = np.array(sorted(list(temps.keys())))
         record = [-10000, (0, 0, 0)]  # value, then year, month, day
 
@@ -449,7 +452,7 @@ async def process_all(args):
                         if val > record[0]:
                             record[0] = val
                             record[1] = (year, month, day)
-                        x.append(ymd_to_year_day(year, month, day))
+                        x.append(ymd_to_year_day_for_graph(year, month, day))
                         y.append(val)
 
             cmap_index = (year - years[0]) / (years[-1] - years[0])
@@ -484,7 +487,7 @@ async def process_all(args):
                 ax.plot(x[-1], y[-1], marker=".", markersize=5, color=last_color)
         if record[0] > -10000:
             record_val = record[0]
-            record_x = ymd_to_year_day(*record[1])
+            record_x = ymd_to_year_day_for_graph(*record[1])
             ax.axhline(y=record_val, color="gray", linewidth=0.5, linestyle="dashed")
             ax.plot(record_x, record_val, marker=".", markersize=5, color="black")
             ax.annotate(
