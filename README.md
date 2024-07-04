@@ -53,6 +53,12 @@ Several things stand out from the time series graphs:
 
 For technical details on data sources and how this code works, see [below](#technical-details).
 
+**NOTE**: As of July 4, 2024, the time-series graphs are now
+date-aligned, so July 4 2024 lines up with July 4 2023, even though
+2024 is a leap year. This is done by "stretching" the non-leap year
+dates, which avoids skipping any data. Previously, the graph's X axis
+was just the day number in the year.
+
 **NOTE**: As of April 27, 2024, the time-series graphs do _not_ mask
 out cells with ice > 50%. After some discussion with the folks at
 [Climate Reanalyzer](https://climatereanalyzer.com), we noticed that
