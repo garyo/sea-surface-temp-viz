@@ -69,6 +69,8 @@ async def try_fetch(urls, session):
             async with session.get(url) as response:
                 if response.status == 200:
                     return await response.read()
+                else:
+                    print(f"Failed to fetch {url}: status={response.status}")
         except Exception as e:
             print(f"Failed to fetch {url}: {e}")
             # keep going
@@ -92,8 +94,8 @@ async def get_sst_dataset(year, mo, day, session, semaphore):
             hdf = h5py.File(file_obj, "r")
             print(f"Got hdf from {year}-{mo}-{day}")
             return hdf
-        except ValueError:
-            print(f"Failed to download {year}-{mo}-{day}.")
+        except ValueError as e:
+            print(f"Failed to download {year}-{mo}-{day} from any URL.")
             raise
 
 
