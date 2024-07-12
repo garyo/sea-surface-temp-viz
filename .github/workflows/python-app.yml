@@ -37,5 +37,5 @@ jobs:
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
     - name: Test
       run: |
-        python sea-surface-temps.py --mode map --dataset sst --days-ago 2
-        python sea-surface-temps.py --mode map --dataset anom --days-ago 2
+        python sea-surface-temps.py --mode map --dataset sst --days-ago 4
+        python sea-surface-temps.py --mode map --dataset anom --days-ago 4
