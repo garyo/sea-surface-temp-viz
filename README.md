@@ -25,8 +25,8 @@ the variance or "anomaly" from the mean value from the 1971-2000 time
 period. The anomalies are computed cell by cell by subtracting the
 mean value at that grid cell over the 1971-2000 period.
 
-![SST temp graph](https://github.com/garyo/sea-surface-temp-viz/releases/latest/download/sst-all.svg)
-![SST anomaly graph](https://github.com/garyo/sea-surface-temp-viz/releases/latest/download/sst-all-anom.svg)
+![SST temp graph](https://github.com/garyo/sea-surface-temp-viz/releases/latest/download/sst-all.png)
+![SST anomaly graph](https://github.com/garyo/sea-surface-temp-viz/releases/latest/download/sst-all-anom.png)
 ![SST temp map](https://github.com/garyo/sea-surface-temp-viz/releases/latest/download/sst-map.png)
 ![SST anomaly map](https://github.com/garyo/sea-surface-temp-viz/releases/latest/download/sst-anom-map.png)
 
