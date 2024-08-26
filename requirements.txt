@@ -26,19 +26,19 @@ frozenlist==1.4.1
     #   aiosignal
 h5py==3.11.0
     # via -r requirements.in
-idna==3.7
+idna==3.8
     # via
     #   requests
     #   yarl
 kiwisolver==1.4.5
     # via matplotlib
-matplotlib==3.9.1.post1
+matplotlib==3.9.2
     # via -r requirements.in
 multidict==6.0.5
     # via
     #   aiohttp
     #   yarl
-numpy==2.0.1
+numpy==2.1.0
     # via
     #   -r requirements.in
     #   contourpy
@@ -48,7 +48,7 @@ packaging==24.1
     # via matplotlib
 pillow==10.4.0
     # via matplotlib
-pyparsing==3.1.2
+pyparsing==3.1.4
     # via matplotlib
 python-dateutil==2.9.0.post0
     # via matplotlib
