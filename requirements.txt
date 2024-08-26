@@ -48,7 +48,7 @@ packaging==24.1
     # via matplotlib
 pillow==10.4.0
     # via matplotlib
-pyparsing==3.1.2
+pyparsing==3.1.4
     # via matplotlib
 python-dateutil==2.9.0.post0
     # via matplotlib
