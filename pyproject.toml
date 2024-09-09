@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Visualization of earth sea surface temperatures"
 requires-python = ">=3.12"
 dependencies = [
-    "aiohttp==3.9.5",
+    "aiohttp==3.10.2",
     "h5py==3.11.0",
     "matplotlib==3.9.0",
     "numpy==2.0.0",
