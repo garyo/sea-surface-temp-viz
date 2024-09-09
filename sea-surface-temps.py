@@ -15,6 +15,8 @@ import h5py
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
+from typing import DefaultDict
+from collections import defaultdict
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -29,7 +31,7 @@ def rescale(x, oldmin, oldmax, newmin, newmax):
 
 # Area of a given lat/lon square, relative to the size at the equator
 # Varies as cos(latitude)
-def rel_area(lat, lon):
+def rel_area(lat, _):
     latitude_radians = np.radians(lat)
     return np.cos(latitude_radians)
 
@@ -38,7 +40,7 @@ class NumpyArrayEncoder(json.JSONEncoder):
     def default(self, o):
         if isinstance(o, np.ndarray):
             return o.tolist()
-        if isinstance(o, np.float32):
+        if type(o) is np.float32:
             return o.item()
         return json.JSONEncoder.default(self, o)
 
@@ -94,7 +96,7 @@ async def get_sst_dataset(year, mo, day, session, semaphore):
             hdf = h5py.File(file_obj, "r")
             print(f"Got hdf from {year}-{mo}-{day}")
             return hdf
-        except ValueError as e:
+        except ValueError:
             print(f"Failed to download {year}-{mo}-{day} from any URL.")
             raise
 
@@ -365,19 +367,11 @@ async def process_map(args):
         plt.show()
 
 
-# Define a function to create 3-level dictionary of ints
-def create_multilevel_dict_with_ints():
-    from collections import defaultdict
-
-    def nested_dict(n, default_type=float):
-        if n == 1:
-            return defaultdict(default_type)
-        else:
-            return defaultdict(lambda: nested_dict(n - 1, default_type))
-
-    data = nested_dict(3)
-    return data
-
+def create_cache_dict() -> DefaultDict[int, DefaultDict[int, DefaultDict[int, float]]]:
+    """Function returning 3-level dictionary [key][key][key] -> float, all levels "defaultdict"
+    so they get created on use.
+    """
+    return defaultdict(lambda: defaultdict(lambda: defaultdict(float)))
 
 async def process_all(args):
     async def get_data(dataset_name, session, semaphore, lock):
@@ -410,7 +404,7 @@ async def process_all(args):
                     except IOError:
                         print(f"Skipping {year}-{mo}-{day}: failed to get data.")
                         pass
-        results = create_multilevel_dict_with_ints()
+        results = create_cache_dict()
         for task in asyncio.as_completed(tasks):
             year, mo, day, val = await task
             async with lock:
