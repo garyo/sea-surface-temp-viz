@@ -30,7 +30,7 @@ idna==3.8
     # via
     #   requests
     #   yarl
-kiwisolver==1.4.5
+kiwisolver==1.4.7
     # via matplotlib
 matplotlib==3.9.2
     # via -r requirements.in
