@@ -9,7 +9,7 @@ dependencies = [
     "matplotlib==3.9.0",
     "numpy==2.0.0",
     "requests==2.32.3",
-    "urllib3==1.26.18",
+    "urllib3==1.26.19",
 ]
 
 # Pyright language server: use our .venv
