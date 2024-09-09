@@ -1,5 +1,7 @@
 # Sea Surface Temperature Visualization
 
+![Build](https://github.com/garyo/sea-surface-temp-viz/actions/workflows/python-app.yml/badge.svg)
+
 Sea surface temperatures are a key indicator of climate change. The
 world's oceans are a significant reservoir of heat, warming and
 cooling much more slowly than the atmosphere. Ocean heat drives larger
