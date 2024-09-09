@@ -373,6 +373,7 @@ def create_cache_dict() -> DefaultDict[int, DefaultDict[int, DefaultDict[int, fl
     """
     return defaultdict(lambda: defaultdict(lambda: defaultdict(float)))
 
+
 async def process_all(args):
     async def get_data(dataset_name, session, semaphore, lock):
         start_year = args.start_year
@@ -495,7 +496,8 @@ async def process_all(args):
             )
         plt.title(title)
         plt.suptitle(
-            f"Years: {years[0]}-{years[-1]}. Created {datetime.datetime.now()}\nCopyright {datetime.date.today().year} Gary Oberbrunner",
+            f"Years: {years[0]}-{years[-1]}. Created {datetime.datetime.now()}\n" +
+            f"Copyright {datetime.date.today().year} Gary Oberbrunner",
             fontsize=7,
             y=0.97,
         )
