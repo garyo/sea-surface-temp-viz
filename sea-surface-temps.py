@@ -83,7 +83,9 @@ async def get_sst_dataset(year, mo, day, session, semaphore):
     # these are about 1.5MB
     # 'anom': difference from 1971-2000 mean for that grid cell
     url_base = "https://www.ncei.noaa.gov/data/sea-surface-temperature-optimum-interpolation/v2.1/access/avhrr"
-    url_final = f"{url_base}/{year:04}{mo:02}/oisst-avhrr-v02r01.{year:04}{mo:02}{day:02}.nc"
+    url_final = (
+        f"{url_base}/{year:04}{mo:02}/oisst-avhrr-v02r01.{year:04}{mo:02}{day:02}.nc"
+    )
     url_prelim = f"{url_base}/{year:04}{mo:02}/oisst-avhrr-v02r01.{year:04}{mo:02}{day:02}_preliminary.nc"
 
     async with semaphore:
@@ -324,7 +326,6 @@ async def process_map(args):
             if args.out:
                 save_metadata(metadata, args.out)
     else:
-
         data = get_processed_hdf_data_array(hdf, "sst", -90, 90, args.ice, args.show)
 
         # range 0-35°C
@@ -425,7 +426,7 @@ async def process_all(args):
     # ONLY USE THIS FOR GRAPHS; it aligns all days after Feb with leap years.
     def ymd_to_year_day_for_graph(year, mo, day):
         while not calendar.isleap(year):
-            year += 1           # find the next leap year
+            year += 1  # find the next leap year
         return datetime.date(year, mo, day).timetuple().tm_yday - 1
 
     def plot_fig(temps, title, use_ice_mask):
@@ -496,8 +497,8 @@ async def process_all(args):
             )
         plt.title(title)
         plt.suptitle(
-            f"Years: {years[0]}-{years[-1]}. Created {datetime.datetime.now()}\n" +
-            f"Copyright {datetime.date.today().year} Gary Oberbrunner",
+            f"Years: {years[0]}-{years[-1]}. Created {datetime.datetime.now()}\n"
+            + f"Copyright {datetime.date.today().year} Gary Oberbrunner",
             fontsize=7,
             y=0.97,
         )
