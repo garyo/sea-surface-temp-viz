@@ -469,7 +469,7 @@ async def process_all(args):
             else:
                 label = None
             ax.plot(x, y, label=label, color=color, linewidth=linewidth)
-            if year == years[-1]:
+            if year == years[-1] and len(x) > 0:
                 # mark last point
                 last_date = year_day_to_date(year, x[-1])
                 last_color = "blue"
