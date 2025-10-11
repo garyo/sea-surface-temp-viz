@@ -313,7 +313,6 @@ async def process_map(args):
             # Plot an equirectangular texture that can be used on a 3d sphere,
             # and save the colormap definition and other metadata to a file
             # so that can be used in the sphere visualization
-            plot_equirect_dataset(data, domain_min, domain_max, variance_cmap, args.out)
             metadata = {
                 "cmap": cmapdef,
                 "title": title,
@@ -324,7 +323,24 @@ async def process_map(args):
                 "day": day,
             }
             if args.out:
-                save_metadata(metadata, args.out)
+                # Generate filenames based on dataset
+                out_dir = pathlib.Path(args.out)
+                out_dir.mkdir(parents=True, exist_ok=True)
+
+                # Dated version for time series
+                dated_filename = f"{date}-sst-temp-anomaly-equirect.png"
+                dated_path = out_dir / dated_filename
+                plot_equirect_dataset(data, domain_min, domain_max, variance_cmap, dated_path)
+                save_metadata(metadata, dated_path)
+
+                # Non-dated version for backward compatibility (latest)
+                latest_filename = "sst-temp-anomaly-equirect.png"
+                latest_path = out_dir / latest_filename
+                plot_equirect_dataset(data, domain_min, domain_max, variance_cmap, latest_path)
+                save_metadata(metadata, latest_path)
+            else:
+                # No output file, just display
+                pass
     else:
         data = get_processed_hdf_data_array(hdf, "sst", -90, 90, args.ice, args.show)
 
@@ -347,7 +363,6 @@ async def process_map(args):
         if args.mode == "map":
             plot_globe_dataset(data, hdf, domain_min, domain_max, sst_cmap, title)
         else:
-            plot_equirect_dataset(data, domain_min, domain_max, sst_cmap, args.out)
             metadata = {
                 "cmap": cmapdef,
                 "title": title,
@@ -358,10 +373,33 @@ async def process_map(args):
                 "day": day,
             }
             if args.out:
-                save_metadata(metadata, args.out)
+                # Generate filenames based on dataset
+                out_dir = pathlib.Path(args.out)
+                out_dir.mkdir(parents=True, exist_ok=True)
+
+                # Dated version for time series
+                dated_filename = f"{date}-sst-temp-equirect.png"
+                dated_path = out_dir / dated_filename
+                plot_equirect_dataset(data, domain_min, domain_max, sst_cmap, dated_path)
+                save_metadata(metadata, dated_path)
+
+                # Non-dated version for backward compatibility (latest)
+                latest_filename = "sst-temp-equirect.png"
+                latest_path = out_dir / latest_filename
+                plot_equirect_dataset(data, domain_min, domain_max, sst_cmap, latest_path)
+                save_metadata(metadata, latest_path)
+            else:
+                # No output file, just display
+                pass
 
     if args.out and args.mode == "map":
-        plt.savefig(args.out, dpi=dpi)
+        # For map mode, generate filename based on dataset and date
+        out_dir = pathlib.Path(args.out)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        dataset_suffix = "anom" if args.dataset == "anom" else "sst"
+        filename = f"sst-{dataset_suffix}-map.png"
+        out_path = out_dir / filename
+        plt.savefig(out_path, dpi=dpi)
     elif args.out and args.mode == "texture":
         pass  # already saved
     else:
@@ -616,7 +654,7 @@ def main(argv=None):
             "--out",
             "-o",
             type=pathlib.Path,
-            help="""Output image to this path""",
+            help="""Output directory for generated files (filenames auto-generated from date and dataset)""",
         )
         parser.add_argument(
             "--cache-file",

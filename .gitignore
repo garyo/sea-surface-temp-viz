@@ -3,3 +3,4 @@ out/
 sst-*.png
 sst-*.json
 README-local.md
+.env
