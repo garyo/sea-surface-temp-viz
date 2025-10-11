@@ -6,8 +6,10 @@ import json
 import os
 import re
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from multiprocessing import cpu_count
 
 import boto3
 from botocore.exceptions import ClientError
@@ -34,7 +36,9 @@ def upload_file_to_s3(s3_client, local_path, bucket, s3_key, dry_run=False):
         raise
 
 
-def delete_file_from_s3(bucket, s3_prefix, filename, dry_run=False, aws_access_key=None, aws_secret_key=None):
+def delete_file_from_s3(
+    bucket, s3_prefix, filename, dry_run=False, aws_access_key=None, aws_secret_key=None
+):
     """Delete a file from S3 by filename."""
     # Create S3 client
     if aws_access_key and aws_secret_key:
@@ -61,11 +65,14 @@ def delete_file_from_s3(bucket, s3_prefix, filename, dry_run=False, aws_access_k
         # After deleting, regenerate and upload index.json
         print()
         print("Regenerating index.json...")
-        index = generate_index_from_s3(bucket, s3_prefix, aws_access_key, aws_secret_key)
+        index = generate_index_from_s3(
+            bucket, s3_prefix, aws_access_key, aws_secret_key
+        )
 
         # Save index locally to temp file
         import tempfile
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             json.dump(index, f, indent=2)
             temp_path = Path(f.name)
 
@@ -101,7 +108,11 @@ def list_bucket_contents(bucket, s3_prefix, aws_access_key=None, aws_secret_key=
     try:
         # List objects with pagination support
         paginator = s3_client.get_paginator("list_objects_v2")
-        prefix = f"{s3_prefix}/" if s3_prefix and not s3_prefix.endswith("/") else s3_prefix or ""
+        prefix = (
+            f"{s3_prefix}/"
+            if s3_prefix and not s3_prefix.endswith("/")
+            else s3_prefix or ""
+        )
 
         total_size = 0
         file_count = 0
@@ -141,7 +152,11 @@ def validate_data_completeness(s3_client, bucket, s3_prefix):
     """Validate that data is complete and warn about missing dates or datasets."""
     # List objects with pagination support
     paginator = s3_client.get_paginator("list_objects_v2")
-    prefix = f"{s3_prefix}/" if s3_prefix and not s3_prefix.endswith("/") else s3_prefix or ""
+    prefix = (
+        f"{s3_prefix}/"
+        if s3_prefix and not s3_prefix.endswith("/")
+        else s3_prefix or ""
+    )
 
     # Track which dates have which datasets
     sst_dates = set()
@@ -156,12 +171,14 @@ def validate_data_completeness(s3_client, bucket, s3_prefix):
             filename = obj["Key"].split("/")[-1]
 
             # Look for sst-temp files
-            match = re.match(r'(\d{4}-\d{2}-\d{2})-sst-temp-equirect\.webp$', filename)
+            match = re.match(r"(\d{4}-\d{2}-\d{2})-sst-temp-equirect\.webp$", filename)
             if match:
                 sst_dates.add(match.group(1))
 
             # Look for anomaly files
-            match = re.match(r'(\d{4}-\d{2}-\d{2})-sst-temp-anomaly-equirect\.webp$', filename)
+            match = re.match(
+                r"(\d{4}-\d{2}-\d{2})-sst-temp-anomaly-equirect\.webp$", filename
+            )
             if match:
                 anom_dates.add(match.group(1))
 
@@ -175,14 +192,18 @@ def validate_data_completeness(s3_client, bucket, s3_prefix):
     anom_only = anom_dates - sst_dates
 
     if sst_only:
-        print(f"⚠️  Warning: {len(sst_only)} date(s) have SST data but missing anomaly data:")
+        print(
+            f"⚠️  Warning: {len(sst_only)} date(s) have SST data but missing anomaly data:"
+        )
         for date in sorted(sst_only)[:10]:  # Show first 10
             print(f"     - {date}")
         if len(sst_only) > 10:
             print(f"     ... and {len(sst_only) - 10} more")
 
     if anom_only:
-        print(f"⚠️  Warning: {len(anom_only)} date(s) have anomaly data but missing SST data:")
+        print(
+            f"⚠️  Warning: {len(anom_only)} date(s) have anomaly data but missing SST data:"
+        )
         for date in sorted(anom_only)[:10]:  # Show first 10
             print(f"     - {date}")
         if len(anom_only) > 10:
@@ -205,7 +226,9 @@ def validate_data_completeness(s3_client, bucket, s3_prefix):
         current_date += timedelta(days=1)
 
     if missing_dates:
-        print(f"⚠️  Warning: {len(missing_dates)} missing date(s) in sequence from {complete_dates[0]} to {complete_dates[-1]}:")
+        print(
+            f"⚠️  Warning: {len(missing_dates)} missing date(s) in sequence from {complete_dates[0]} to {complete_dates[-1]}:"
+        )
         for date in missing_dates[:10]:  # Show first 10
             print(f"     - {date}")
         if len(missing_dates) > 10:
@@ -226,7 +249,11 @@ def generate_index_from_s3(bucket, s3_prefix, aws_access_key=None, aws_secret_ke
 
     # List objects with pagination support
     paginator = s3_client.get_paginator("list_objects_v2")
-    prefix = f"{s3_prefix}/" if s3_prefix and not s3_prefix.endswith("/") else s3_prefix or ""
+    prefix = (
+        f"{s3_prefix}/"
+        if s3_prefix and not s3_prefix.endswith("/")
+        else s3_prefix or ""
+    )
 
     # Find all dated texture files in S3
     dates = set()
@@ -238,16 +265,13 @@ def generate_index_from_s3(bucket, s3_prefix, aws_access_key=None, aws_secret_ke
             # Extract just the filename from the full S3 key
             filename = obj["Key"].split("/")[-1]
             # Look for pattern: YYYY-MM-DD-sst-temp-equirect.webp
-            match = re.match(r'(\d{4}-\d{2}-\d{2})-sst-temp-equirect\.webp$', filename)
+            match = re.match(r"(\d{4}-\d{2}-\d{2})-sst-temp-equirect\.webp$", filename)
             if match:
                 dates.add(match.group(1))
 
     # Create index with sorted dates (newest last)
     dates_list = sorted(list(dates))
-    index = {
-        'dates': dates_list,
-        'latest': dates_list[-1] if dates_list else None
-    }
+    index = {"dates": dates_list, "latest": dates_list[-1] if dates_list else None}
 
     print(f"Generated index from S3 with {len(dates_list)} dates")
     if dates_list:
@@ -265,7 +289,11 @@ def generate_index_from_s3(bucket, s3_prefix, aws_access_key=None, aws_secret_ke
 def fetch_existing_objects_metadata(s3_client, bucket, s3_prefix):
     """Return metadata for existing objects under the prefix keyed by full S3 key."""
     paginator = s3_client.get_paginator("list_objects_v2")
-    prefix = f"{s3_prefix}/" if s3_prefix and not s3_prefix.endswith("/") else s3_prefix or ""
+    prefix = (
+        f"{s3_prefix}/"
+        if s3_prefix and not s3_prefix.endswith("/")
+        else s3_prefix or ""
+    )
     metadata = {}
 
     for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
@@ -325,9 +353,13 @@ def should_skip_upload(
 
     if debug:
         if remote_size != local_size:
-            print(f"[DEBUG] {local_path.name}: size differs (remote {remote_size} vs local {local_size})")
+            print(
+                f"[DEBUG] {local_path.name}: size differs (remote {remote_size} vs local {local_size})"
+            )
         elif remote_last_modified < local_mtime:
-            print(f"[DEBUG] {local_path.name}: remote is older (remote {remote_last_modified.isoformat()} < local {local_mtime.isoformat()})")
+            print(
+                f"[DEBUG] {local_path.name}: remote is older (remote {remote_last_modified.isoformat()} < local {local_mtime.isoformat()})"
+            )
 
     return False
 
@@ -339,8 +371,9 @@ def upload_maps_directory(
     dry_run=False,
     aws_access_key=None,
     aws_secret_key=None,
-    always_upload_maps=False,
+    always_upload=False,
     debug_skip_checks=False,
+    max_upload_workers=None,
 ):
     """Upload all files in the maps directory to S3, then generate and upload index.json."""
     maps_path = Path(maps_dir)
@@ -370,31 +403,64 @@ def upload_maps_directory(
     print(f"Target: s3://{bucket}/{s3_prefix}")
     print()
 
-    existing_objects = fetch_existing_objects_metadata(s3_client, bucket, s3_prefix)
-    if debug_skip_checks:
-        print(f"[DEBUG] Found {len(existing_objects)} existing object(s) in S3 under prefix")
+    existing_objects = {}
+    if not always_upload:
+        existing_objects = fetch_existing_objects_metadata(s3_client, bucket, s3_prefix)
+        if debug_skip_checks:
+            print(
+                f"[DEBUG] Found {len(existing_objects)} existing object(s) in S3 under prefix"
+            )
 
     upload_count = 0
     skipped_count = 0
+    files_to_upload = []
 
-    # Upload each file
+    # Decide which files need uploading
     for file_path in sorted(files):
         s3_key = f"{s3_prefix}/{file_path.name}" if s3_prefix else file_path.name
-        if not always_upload_maps and should_skip_upload(
+        remote_meta = existing_objects.get(s3_key)
+        if not always_upload and should_skip_upload(
             s3_client,
             bucket,
             s3_key,
             file_path,
             debug=debug_skip_checks,
-            remote_metadata=existing_objects.get(s3_key),
+            remote_metadata=remote_meta,
         ):
             skipped_count += 1
             continue
-        upload_file_to_s3(s3_client, file_path, bucket, s3_key, dry_run)
-        upload_count += 1
+        files_to_upload.append((file_path, s3_key))
+
+    # Upload pending files (optionally in parallel)
+    if files_to_upload:
+        if dry_run:
+            for file_path, s3_key in files_to_upload:
+                upload_file_to_s3(s3_client, file_path, bucket, s3_key, dry_run=True)
+                upload_count += 1
+        else:
+            workers = max(1, max_upload_workers or 2 * cpu_count())
+            if workers > 1:
+                print(f"Uploading with up to {workers} concurrent worker(s)")
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                future_to_file = {
+                    executor.submit(
+                        upload_file_to_s3,
+                        s3_client,
+                        file_path,
+                        bucket,
+                        s3_key,
+                        False,
+                    ): (file_path, s3_key)
+                    for file_path, s3_key in files_to_upload
+                }
+                for future in as_completed(future_to_file):
+                    future.result()
+                    upload_count += 1
 
     print()
-    print(f"{'[DRY RUN] Would upload' if dry_run else 'Uploaded'} {upload_count} file(s)")
+    print(
+        f"{'[DRY RUN] Would upload' if dry_run else 'Uploaded'} {upload_count} file(s)"
+    )
     if skipped_count:
         print(f"Skipped {skipped_count} file(s) already present in S3")
     print()
@@ -404,8 +470,8 @@ def upload_maps_directory(
     index = generate_index_from_s3(bucket, s3_prefix, aws_access_key, aws_secret_key)
 
     # Save index locally
-    index_path = maps_path / 'index.json'
-    with open(index_path, 'w') as f:
+    index_path = maps_path / "index.json"
+    with open(index_path, "w") as f:
         json.dump(index, f, indent=2)
     print(f"Saved index.json to {index_path}")
 
@@ -460,14 +526,19 @@ def main(argv=None):
         help="Show what would be uploaded without actually uploading",
     )
     parser.add_argument(
-        "--always-upload-maps",
+        "--always-upload",
         action="store_true",
-        help="Upload all map files regardless of existing files in S3",
+        help="Upload all files regardless of existing files in S3",
     )
     parser.add_argument(
         "--debug-upload-checks",
         action="store_true",
         help="Print debug details about skip decisions",
+    )
+    parser.add_argument(
+        "--max-upload-workers",
+        type=int,
+        help="Maximum number of concurrent uploads (default: CPU count)",
     )
 
     args = parser.parse_args(argv)
@@ -511,8 +582,9 @@ def main(argv=None):
             args.dry_run,
             aws_access_key,
             aws_secret_key,
-            args.always_upload_maps,
+            args.always_upload,
             args.debug_upload_checks,
+            args.max_upload_workers,
         )
 
 
