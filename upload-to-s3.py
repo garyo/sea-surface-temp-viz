@@ -6,10 +6,11 @@ import json
 import os
 import re
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import boto3
+from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 
 
@@ -261,8 +262,85 @@ def generate_index_from_s3(bucket, s3_prefix, aws_access_key=None, aws_secret_ke
     return index
 
 
+def fetch_existing_objects_metadata(s3_client, bucket, s3_prefix):
+    """Return metadata for existing objects under the prefix keyed by full S3 key."""
+    paginator = s3_client.get_paginator("list_objects_v2")
+    prefix = f"{s3_prefix}/" if s3_prefix and not s3_prefix.endswith("/") else s3_prefix or ""
+    metadata = {}
+
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        for obj in page.get("Contents", []):
+            metadata[obj["Key"]] = {
+                "size": obj["Size"],
+                "last_modified": obj["LastModified"],
+            }
+
+    return metadata
+
+
+def should_skip_upload(
+    s3_client,
+    bucket,
+    s3_key,
+    local_path,
+    debug=False,
+    remote_metadata=None,
+):
+    """Return True when remote object matches size and is not older than local."""
+    if remote_metadata is None:
+        try:
+            response = s3_client.head_object(Bucket=bucket, Key=s3_key)
+        except ClientError as exc:
+            error_code = exc.response.get("Error", {}).get("Code")
+            if error_code in ("404", "NoSuchKey"):
+                return False
+            raise
+        remote_size = response.get("ContentLength")
+        remote_last_modified = response.get("LastModified")
+    else:
+        remote_size = remote_metadata.get("size")
+        remote_last_modified = remote_metadata.get("last_modified")
+
+    if remote_size is None or remote_last_modified is None:
+        return False
+
+    local_stat = local_path.stat()
+    local_size = local_stat.st_size
+    local_mtime = datetime.fromtimestamp(local_stat.st_mtime, tz=timezone.utc)
+
+    if debug:
+        remote_ts = remote_last_modified.isoformat()
+        local_ts = local_mtime.isoformat()
+        print(
+            f"[DEBUG] {local_path.name}: remote size={remote_size}, mtime={remote_ts}; "
+            f"local size={local_size}, mtime={local_ts}"
+        )
+
+    if remote_size == local_size and remote_last_modified >= local_mtime:
+        print(
+            f"Skipping: {local_path} -> s3://{bucket}/{s3_key} "
+            "(remote file exists, same size, and not older)"
+        )
+        return True
+
+    if debug:
+        if remote_size != local_size:
+            print(f"[DEBUG] {local_path.name}: size differs (remote {remote_size} vs local {local_size})")
+        elif remote_last_modified < local_mtime:
+            print(f"[DEBUG] {local_path.name}: remote is older (remote {remote_last_modified.isoformat()} < local {local_mtime.isoformat()})")
+
+    return False
+
+
 def upload_maps_directory(
-    maps_dir, bucket, s3_prefix, dry_run=False, aws_access_key=None, aws_secret_key=None
+    maps_dir,
+    bucket,
+    s3_prefix,
+    dry_run=False,
+    aws_access_key=None,
+    aws_secret_key=None,
+    always_upload_maps=False,
+    debug_skip_checks=False,
 ):
     """Upload all files in the maps directory to S3, then generate and upload index.json."""
     maps_path = Path(maps_dir)
@@ -292,13 +370,33 @@ def upload_maps_directory(
     print(f"Target: s3://{bucket}/{s3_prefix}")
     print()
 
+    existing_objects = fetch_existing_objects_metadata(s3_client, bucket, s3_prefix)
+    if debug_skip_checks:
+        print(f"[DEBUG] Found {len(existing_objects)} existing object(s) in S3 under prefix")
+
+    upload_count = 0
+    skipped_count = 0
+
     # Upload each file
     for file_path in sorted(files):
         s3_key = f"{s3_prefix}/{file_path.name}" if s3_prefix else file_path.name
+        if not always_upload_maps and should_skip_upload(
+            s3_client,
+            bucket,
+            s3_key,
+            file_path,
+            debug=debug_skip_checks,
+            remote_metadata=existing_objects.get(s3_key),
+        ):
+            skipped_count += 1
+            continue
         upload_file_to_s3(s3_client, file_path, bucket, s3_key, dry_run)
+        upload_count += 1
 
     print()
-    print(f"{'[DRY RUN] Would have uploaded' if dry_run else 'Uploaded'} {len(files)} files")
+    print(f"{'[DRY RUN] Would upload' if dry_run else 'Uploaded'} {upload_count} file(s)")
+    if skipped_count:
+        print(f"Skipped {skipped_count} file(s) already present in S3")
     print()
 
     # Now generate index.json from S3 contents (includes what we just uploaded)
@@ -361,6 +459,16 @@ def main(argv=None):
         action="store_true",
         help="Show what would be uploaded without actually uploading",
     )
+    parser.add_argument(
+        "--always-upload-maps",
+        action="store_true",
+        help="Upload all map files regardless of existing files in S3",
+    )
+    parser.add_argument(
+        "--debug-upload-checks",
+        action="store_true",
+        help="Print debug details about skip decisions",
+    )
 
     args = parser.parse_args(argv)
 
@@ -403,8 +511,14 @@ def main(argv=None):
             args.dry_run,
             aws_access_key,
             aws_secret_key,
+            args.always_upload_maps,
+            args.debug_upload_checks,
         )
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except KeyboardInterrupt:
+        print("\nOperation cancelled by user", file=sys.stderr)
+        sys.exit(130)
