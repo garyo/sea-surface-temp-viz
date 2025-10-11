@@ -328,15 +328,19 @@ async def process_map(args):
                 out_dir.mkdir(parents=True, exist_ok=True)
 
                 # Dated version for time series
-                dated_filename = f"{date}-sst-temp-anomaly-equirect.png"
+                dated_filename = f"{date}-sst-temp-anomaly-equirect.webp"
                 dated_path = out_dir / dated_filename
-                plot_equirect_dataset(data, domain_min, domain_max, variance_cmap, dated_path)
+                plot_equirect_dataset(
+                    data, domain_min, domain_max, variance_cmap, dated_path
+                )
                 save_metadata(metadata, dated_path)
 
                 # Non-dated version for backward compatibility (latest)
-                latest_filename = "sst-temp-anomaly-equirect.png"
+                latest_filename = "sst-temp-anomaly-equirect.webp"
                 latest_path = out_dir / latest_filename
-                plot_equirect_dataset(data, domain_min, domain_max, variance_cmap, latest_path)
+                plot_equirect_dataset(
+                    data, domain_min, domain_max, variance_cmap, latest_path
+                )
                 save_metadata(metadata, latest_path)
             else:
                 # No output file, just display
@@ -378,15 +382,19 @@ async def process_map(args):
                 out_dir.mkdir(parents=True, exist_ok=True)
 
                 # Dated version for time series
-                dated_filename = f"{date}-sst-temp-equirect.png"
+                dated_filename = f"{date}-sst-temp-equirect.webp"
                 dated_path = out_dir / dated_filename
-                plot_equirect_dataset(data, domain_min, domain_max, sst_cmap, dated_path)
+                plot_equirect_dataset(
+                    data, domain_min, domain_max, sst_cmap, dated_path
+                )
                 save_metadata(metadata, dated_path)
 
                 # Non-dated version for backward compatibility (latest)
-                latest_filename = "sst-temp-equirect.png"
+                latest_filename = "sst-temp-equirect.webp"
                 latest_path = out_dir / latest_filename
-                plot_equirect_dataset(data, domain_min, domain_max, sst_cmap, latest_path)
+                plot_equirect_dataset(
+                    data, domain_min, domain_max, sst_cmap, latest_path
+                )
                 save_metadata(metadata, latest_path)
             else:
                 # No output file, just display
@@ -397,7 +405,7 @@ async def process_map(args):
         out_dir = pathlib.Path(args.out)
         out_dir.mkdir(parents=True, exist_ok=True)
         dataset_suffix = "anom" if args.dataset == "anom" else "sst"
-        filename = f"sst-{dataset_suffix}-map.png"
+        filename = f"sst-{dataset_suffix}-map.webp"
         out_path = out_dir / filename
         plt.savefig(out_path, dpi=dpi)
     elif args.out and args.mode == "texture":

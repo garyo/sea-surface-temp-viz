@@ -155,12 +155,12 @@ def validate_data_completeness(s3_client, bucket, s3_prefix):
             filename = obj["Key"].split("/")[-1]
 
             # Look for sst-temp files
-            match = re.match(r'(\d{4}-\d{2}-\d{2})-sst-temp-equirect\.png$', filename)
+            match = re.match(r'(\d{4}-\d{2}-\d{2})-sst-temp-equirect\.webp$', filename)
             if match:
                 sst_dates.add(match.group(1))
 
             # Look for anomaly files
-            match = re.match(r'(\d{4}-\d{2}-\d{2})-sst-temp-anomaly-equirect\.png$', filename)
+            match = re.match(r'(\d{4}-\d{2}-\d{2})-sst-temp-anomaly-equirect\.webp$', filename)
             if match:
                 anom_dates.add(match.group(1))
 
@@ -236,8 +236,8 @@ def generate_index_from_s3(bucket, s3_prefix, aws_access_key=None, aws_secret_ke
         for obj in page["Contents"]:
             # Extract just the filename from the full S3 key
             filename = obj["Key"].split("/")[-1]
-            # Look for pattern: YYYY-MM-DD-sst-temp-equirect.png
-            match = re.match(r'(\d{4}-\d{2}-\d{2})-sst-temp-equirect\.png$', filename)
+            # Look for pattern: YYYY-MM-DD-sst-temp-equirect.webp
+            match = re.match(r'(\d{4}-\d{2}-\d{2})-sst-temp-equirect\.webp$', filename)
             if match:
                 dates.add(match.group(1))
 
@@ -332,7 +332,7 @@ def main(argv=None):
     parser.add_argument(
         "--delete",
         type=str,
-        help="Delete a file from S3 by filename (e.g., '2024-01-15-sst-temp-equirect.png')",
+        help="Delete a file from S3 by filename (e.g., '2024-01-15-sst-temp-equirect.webp')",
     )
     parser.add_argument(
         "--maps-dir",

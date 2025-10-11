@@ -35,7 +35,7 @@ jobs:
         uv run sea-surface-temps.py --mode map --dataset sst --days-ago 2 --out ./output || true
         uv run sea-surface-temps.py --mode map --dataset anom --days-ago 2 --out ./output || true
 
-    # This generates textures (.png) and associated colormap json files (-metadata.json)
+    # This generates textures (.webp) and associated colormap json files (-metadata.json)
     # Generate for the last 7 days to build up a time series (and catch any missed days)
     - name: Generate map textures
       run: |
@@ -66,19 +66,19 @@ jobs:
         prerelease: false
         body: "Latest plots as of ${{ steps.date.outputs.date }}"
         files: |
-           output/sst-sst-map.png
-           output/sst-anom-map.png
-           output/sst-all.png
-           output/sst-all-anom.png
+           output/sst-sst-map.webp
+           output/sst-anom-map.webp
+           output/sst-all.webp
+           output/sst-all-anom.webp
            output/sst-all.svg
            output/sst-all-anom.svg
-           maps/sst-temp-equirect.png
+           maps/sst-temp-equirect.webp
            maps/sst-temp-equirect-metadata.json
-           maps/sst-temp-anomaly-equirect.png
+           maps/sst-temp-anomaly-equirect.webp
            maps/sst-temp-anomaly-equirect-metadata.json
-           maps/*-sst-temp-equirect.png
+           maps/*-sst-temp-equirect.webp
            maps/*-sst-temp-equirect-metadata.json
-           maps/*-sst-temp-anomaly-equirect.png
+           maps/*-sst-temp-anomaly-equirect.webp
            maps/*-sst-temp-anomaly-equirect-metadata.json
            maps/index.json
                       
