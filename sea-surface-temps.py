@@ -24,6 +24,12 @@ n_concurrent_requests = 20
 dpi = 150
 
 
+class DataFetchError(Exception):
+    """Raised when all attempts to fetch SST data fail"""
+
+    pass
+
+
 # rescale x, in the range [oldmin,oldmax], into [newmin,newmax]
 def rescale(x, oldmin, oldmax, newmin, newmax):
     return ((x - oldmin) / (oldmax - oldmin)) * (newmax - newmin) + newmin
@@ -76,7 +82,7 @@ async def try_fetch(urls, session):
         except Exception as e:
             print(f"Failed to fetch {url}: {e}")
             # keep going
-    raise ValueError("All URL fetches failed")
+    raise DataFetchError("All URL fetches failed")
 
 
 async def get_sst_dataset(year, mo, day, session, semaphore):
@@ -98,7 +104,7 @@ async def get_sst_dataset(year, mo, day, session, semaphore):
             hdf = h5py.File(file_obj, "r")
             print(f"Got hdf from {year}-{mo}-{day}")
             return hdf
-        except ValueError:
+        except DataFetchError:
             print(f"Failed to download {year}-{mo}-{day} from any URL.")
             raise
 
@@ -198,7 +204,7 @@ async def get_temp_for_date(
         t = t_sst if dataset_name == "sst" else t_anom
         print(f"Average {dataset_name} {year}-{mo}-{day}: {t:.4f}°C")
         do_save = True
-    except ValueError:
+    except DataFetchError:
         t = np.nan
         do_save = False
 
@@ -282,7 +288,7 @@ async def process_map(args):
     async with aiohttp.ClientSession() as session:
         try:
             hdf = await get_sst_dataset(year, mo, day, session, semaphore)
-        except ValueError:
+        except DataFetchError:
             print(f"Failed to get SST data for {year}-{mo}-{day}")
             raise
 
@@ -296,8 +302,8 @@ async def process_map(args):
             [0, "white"],
             [1.5, "yellow"],
             [3, "red"],
-            [5, "darkred"],
-            [7.0, "white"],
+            [5, "darkred"],  # #8b0000
+            [7, "#470000"],  # deep dark red
         ]
         variance_cmap = LinearSegmentedColormap.from_list(
             "variance_cmap", rescale_colormap_def_to_01(cmapdef)
@@ -351,10 +357,11 @@ async def process_map(args):
         cmapdef = [
             [0, "darkblue"],
             [20, "white"],
-            [22.5, "yellow"],
+            [24, "yellow"],
+            [28, "orange"],
             [30, "red"],
             [32, "darkred"],
-            [35, "white"],
+            [35, "#470000"],  # deep dark red
         ]
         sst_cmap = LinearSegmentedColormap.from_list(
             "sst_cmap", rescale_colormap_def_to_01(cmapdef)
@@ -698,6 +705,9 @@ def main(argv=None):
         if not args.out:
             plt.show(block=True)  # run event loop til all windows closed
 
+    except DataFetchError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
     except RuntimeError as e:
         print(e)
         return 1
