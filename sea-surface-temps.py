@@ -294,15 +294,13 @@ async def process_map(args):
             [-3, "darkblue"],
             [-0.5, "lightblue"],
             [0, "white"],
-            [0.5, "yellow"],
-            [2.5, "red"],
-            [3, "darkred"],
-            [4.0, "white"],
-            [5.0, "gray"],
-            [7.0, "violet"],
+            [1.5, "yellow"],
+            [3, "red"],
+            [5, "darkred"],
+            [7.0, "white"],
         ]
         variance_cmap = LinearSegmentedColormap.from_list(
-            "sst_cmap", rescale_colormap_def_to_01(cmapdef)
+            "variance_cmap", rescale_colormap_def_to_01(cmapdef)
         )
         domain_min = cmapdef[0][0]
         domain_max = cmapdef[-1][0]
