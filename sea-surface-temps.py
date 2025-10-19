@@ -102,10 +102,10 @@ async def get_sst_dataset(year, mo, day, session, semaphore):
             # Use io.BytesIO to create a file-like object from the downloaded bytes
             file_obj = io.BytesIO(data)
             hdf = h5py.File(file_obj, "r")
-            print(f"Got hdf from {year}-{mo}-{day}")
+            print(f"✅Got hdf from {year}-{mo}-{day}")
             return hdf
         except DataFetchError:
-            print(f"Failed to download {year}-{mo}-{day} from any URL.")
+            print(f"❌Failed to download {year}-{mo}-{day} from any URL.")
             raise
 
 
@@ -289,7 +289,7 @@ async def process_map(args):
         try:
             hdf = await get_sst_dataset(year, mo, day, session, semaphore)
         except DataFetchError:
-            print(f"Failed to get SST data for {year}-{mo}-{day}")
+            print(f"❌Failed to get SST data for {year}-{mo}-{day}")
             raise
 
     if args.dataset == "anom":
@@ -455,7 +455,7 @@ async def process_all(args):
                             )
                         )
                     except IOError:
-                        print(f"Skipping {year}-{mo}-{day}: failed to get data.")
+                        print(f"❌Skipping {year}-{mo}-{day}: failed to get data.")
                         pass
         results = create_cache_dict()
         for task in asyncio.as_completed(tasks):
@@ -706,7 +706,7 @@ def main(argv=None):
             plt.show(block=True)  # run event loop til all windows closed
 
     except DataFetchError as e:
-        print(f"Error: {e}", file=sys.stderr)
+        print(f"❌Error: {e}", file=sys.stderr)
         return 1
     except RuntimeError as e:
         print(e)
