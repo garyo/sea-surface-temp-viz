@@ -19,8 +19,8 @@ dependencies = [
 venvPath = "."
 venv = ".venv"
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "flake8>=7.1.1",
     "pytest>=8.3.2",
     "ruff>=0.6.4",
