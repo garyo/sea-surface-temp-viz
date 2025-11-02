@@ -68,8 +68,8 @@ jobs:
         files: |
            output/sst-sst-map.webp
            output/sst-anom-map.webp
-           output/sst-all.webp
-           output/sst-all-anom.webp
+           output/sst-all.png
+           output/sst-all-anom.png
            output/sst-all.svg
            output/sst-all-anom.svg
            maps/sst-temp-equirect.webp

@@ -29,8 +29,8 @@ mean value at that grid cell over the 1971-2000 period.
 
 ![SST temp graph](https://github.com/garyo/sea-surface-temp-viz/releases/latest/download/sst-all.png)
 ![SST anomaly graph](https://github.com/garyo/sea-surface-temp-viz/releases/latest/download/sst-all-anom.png)
-![SST temp map](https://github.com/garyo/sea-surface-temp-viz/releases/latest/download/sst-map.png)
-![SST anomaly map](https://github.com/garyo/sea-surface-temp-viz/releases/latest/download/sst-anom-map.png)
+![SST temp map](https://github.com/garyo/sea-surface-temp-viz/releases/latest/download/sst-sst-map.webp)
+![SST anomaly map](https://github.com/garyo/sea-surface-temp-viz/releases/latest/download/sst-anom-map.webp)
 
 To see the above maps on a 3d interactive globe, visit https://globe-viz.oberbrunner.com.
 
