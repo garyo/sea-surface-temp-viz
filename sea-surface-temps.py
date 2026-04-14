@@ -163,8 +163,6 @@ temps_cache = {}
 
 
 def save_cache():
-    global temps_cache
-    global temps_cache_file
     json_data = json.dumps(temps_cache, sort_keys=True, indent=2, cls=NumpyArrayEncoder)
     with open(temps_cache_file, "w") as f:
         f.write(json_data)
