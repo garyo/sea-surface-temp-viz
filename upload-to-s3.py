@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
 """Upload sea surface temperature map files to AWS S3."""
 
 import argparse

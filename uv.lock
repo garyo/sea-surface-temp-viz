@@ -1157,7 +1157,7 @@ dev = [
 requires-dist = [
     { name = "aiohttp", specifier = ">=3.13.4" },
     { name = "boto3", specifier = ">=1.35.0" },
-    { name = "h5py", specifier = ">=3.11.0" },
+    { name = "h5py", specifier = ">=3.16.0" },
     { name = "matplotlib", specifier = ">3.9.0" },
     { name = "numpy", specifier = ">=2.1.1" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
