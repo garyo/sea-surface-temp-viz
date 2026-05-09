@@ -255,28 +255,43 @@ def generate_index_from_s3(bucket, s3_prefix, aws_access_key=None, aws_secret_ke
         else s3_prefix or ""
     )
 
-    # Find all dated texture files in S3
+    # Find all dated texture files and time-series region JSONs in S3.
     dates = set()
+    timeseries_regions = set()
     for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
         if "Contents" not in page:
             continue
 
         for obj in page["Contents"]:
-            # Extract just the filename from the full S3 key
-            filename = obj["Key"].split("/")[-1]
-            # Look for pattern: YYYY-MM-DD-sst-temp-equirect.webp
+            # Key relative to the prefix (e.g. "timeseries/global.json")
+            key_rel = obj["Key"][len(prefix):] if prefix else obj["Key"]
+            filename = key_rel.split("/")[-1]
+
+            # Dated equirect textures: YYYY-MM-DD-sst-temp-equirect.webp
             match = re.match(r"(\d{4}-\d{2}-\d{2})-sst-temp-equirect\.webp$", filename)
             if match:
                 dates.add(match.group(1))
 
-    # Create index with sorted dates (newest last)
+            # Time-series region files: timeseries/<region>.json
+            ts_match = re.match(r"timeseries/([A-Za-z0-9_]+)\.json$", key_rel)
+            if ts_match:
+                timeseries_regions.add(ts_match.group(1))
+
+    # Create index with sorted dates (newest last) and discovered regions.
     dates_list = sorted(list(dates))
-    index = {"dates": dates_list, "latest": dates_list[-1] if dates_list else None}
+    regions_list = sorted(list(timeseries_regions))
+    index = {
+        "dates": dates_list,
+        "latest": dates_list[-1] if dates_list else None,
+        "timeseries": {"regions": regions_list},
+    }
 
     print(f"Generated index from S3 with {len(dates_list)} dates")
     if dates_list:
         print(f"  Date range: {dates_list[0]} to {dates_list[-1]}")
         print(f"  Latest: {index['latest']}")
+    if regions_list:
+        print(f"  Time-series regions: {', '.join(regions_list)}")
 
     # Validate data completeness
     print()
@@ -382,8 +397,13 @@ def upload_maps_directory(
         print(f"Error: Directory {maps_dir} does not exist")
         sys.exit(1)
 
-    # Get all files to upload (excluding any existing index.json)
-    files = [f for f in maps_path.glob("*") if f.is_file() and f.name != "index.json"]
+    # Get all files to upload (recursively, excluding any existing index.json).
+    # Subdirs (e.g. maps/timeseries/) are mirrored under the S3 prefix.
+    files = [
+        f
+        for f in maps_path.rglob("*")
+        if f.is_file() and f.name != "index.json"
+    ]
     if not files:
         print(f"No files found in {maps_dir}")
         return
@@ -415,9 +435,11 @@ def upload_maps_directory(
     skipped_count = 0
     files_to_upload = []
 
-    # Decide which files need uploading
+    # Decide which files need uploading.
+    # Preserve the relative path under maps_path so subdirs mirror into S3.
     for file_path in sorted(files):
-        s3_key = f"{s3_prefix}/{file_path.name}" if s3_prefix else file_path.name
+        rel_key = file_path.relative_to(maps_path).as_posix()
+        s3_key = f"{s3_prefix}/{rel_key}" if s3_prefix else rel_key
         remote_meta = existing_objects.get(s3_key)
         if not always_upload and should_skip_upload(
             s3_client,
