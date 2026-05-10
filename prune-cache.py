@@ -8,9 +8,11 @@ import pathlib
 
 
 def parse_cache_date(datestr: str):
-    yr, mo, day, type = datestr.split("-")
-    date = datetime.date(int(yr), int(mo), int(day))
-    return date
+    # Keys look like "YYYY-MM-DD-source-dataset-region" (e.g.
+    # "1982-01-01-oisst-sst-global"). Only the date prefix matters here.
+    parts = datestr.split("-")
+    yr, mo, day = parts[0], parts[1], parts[2]
+    return datetime.date(int(yr), int(mo), int(day))
 
 
 def prune_cache_file(infile: str, outfile: str, days_before_today):
@@ -78,7 +80,7 @@ def main(argv=None):
             "-i",
             type=pathlib.Path,
             dest="infile",  # needed since "in" is a keyword
-            default="./sst-data-cache.json",
+            default="./data-cache.json",
             help="""Input cache file""",
         )
         args = parser.parse_args(argv)

@@ -6,3 +6,6 @@ README-local.md
 .env
 .env.example
 maps
+__pycache__/
+netcdf-archive/
+.venv/

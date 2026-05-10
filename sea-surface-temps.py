@@ -18,6 +18,8 @@ from matplotlib.colors import LinearSegmentedColormap
 from typing import DefaultDict
 from collections import defaultdict
 
+import regions
+
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 n_concurrent_requests = 20
@@ -150,16 +152,23 @@ def latlon_weights(hdf):
     return rel_area(lat, lon)
 
 
-def get_average_temp(hdf, dataset_name, use_ice_mask):
-    data = get_processed_hdf_data_array(hdf, dataset_name, -60, 60, use_ice_mask)
-    weights = latlon_weights(hdf)
-    average = np.ma.average(data, weights=weights)
-    return average
+def latlon_2d(hdf):
+    """Return 2D lat/lon meshgrids matching the HDF dataset shape."""
+    lat = hdf["lat"][:]
+    lon = hdf["lon"][:]
+    (lon_2d, lat_2d) = np.meshgrid(lon, lat)
+    return lat_2d, lon_2d
 
 
-# Disk cache: entries are yyyy-mm-dd-DATASETNAME
-temps_cache_file = "./sst-data-cache.json"
+# Disk cache. New key shape: yyyy-mm-dd-{source}-{dataset}-{region}
+# (e.g. 1982-01-01-oisst-sst-global). Previously yyyy-mm-dd-{dataset}; the
+# repo holds a one-time migrated data-cache.json from scripts/migrate_cache.py.
+temps_cache_file = "./data-cache.json"
 temps_cache = {}
+
+
+def cache_key(year, mo, day, source, dataset, region):
+    return f"{year:04}-{mo:02}-{day:02}-{source}-{dataset}-{region}"
 
 
 def save_cache():
@@ -180,27 +189,29 @@ def load_cache(path):
 
 
 async def get_temp_for_date(
-    year, mo, day, dataset_name, use_ice_mask, session, semaphore, lock
+    year, mo, day, dataset_name, use_ice_mask, session, semaphore, lock,
+    region="global", source="oisst",
 ):
     async with lock:
-
-        def cache_key(name):
-            return f"{year}-{mo:02}-{day:02}-{name}"
-
-        cached = temps_cache.get(cache_key(dataset_name))
-        if cached:
-            # print(f"Average {dataset_name} {year}-{mo}-{day}: {cached:.4f}°C (from cache)")
+        cached = temps_cache.get(cache_key(year, mo, day, source, dataset_name, region))
+        if cached is not None:
             return (year, mo, day, cached)
 
     try:
         hdf = await get_sst_dataset(year, mo, day, session, semaphore)
-        # compute & cache both datasets
-        t_sst = get_average_temp(hdf, "sst", use_ice_mask)
-        t_anom = get_average_temp(hdf, "anom", use_ice_mask)
-        temps_cache[cache_key("sst")] = t_sst
-        temps_cache[cache_key("anom")] = t_anom
-        t = t_sst if dataset_name == "sst" else t_anom
-        print(f"Average {dataset_name} {year}-{mo}-{day}: {t:.4f}°C")
+        # One pass over the open NetCDF: compute and cache aggregates for ALL
+        # regions and BOTH datasets. The download dominates cost; per-region
+        # work is cheap (cosine-weighted mean of an already-loaded array).
+        lat_2d, lon_2d = latlon_2d(hdf)
+        for ds_name in ("sst", "anom"):
+            data = get_processed_hdf_data_array(
+                hdf, ds_name, -90, 90, use_ice_mask
+            )
+            for region_id in regions.region_ids():
+                val = regions.aggregate(data, lat_2d, lon_2d, region_id)
+                temps_cache[cache_key(year, mo, day, source, ds_name, region_id)] = val
+        t = temps_cache[cache_key(year, mo, day, source, dataset_name, region)]
+        print(f"Computed {dataset_name} {year}-{mo:02}-{day:02} ({region}): {t:.4f}°C")
         do_save = True
     except DataFetchError:
         t = np.nan
@@ -670,7 +681,7 @@ def main(argv=None):
         parser.add_argument(
             "--cache-file",
             type=pathlib.Path,
-            default="./sst-data-cache.json",
+            default="./data-cache.json",
             help="""Cache file to speed up future runs""",
         )
         parser.add_argument(
