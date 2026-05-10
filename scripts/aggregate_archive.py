@@ -27,6 +27,7 @@ import re
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from functools import partial
 from pathlib import Path
 
 import h5py
@@ -63,30 +64,35 @@ def latlon_2d(hdf):
     return lat_2d, lon_2d
 
 
-def aggregate_one(nc_path: Path) -> tuple[str, dict[str, float]]:
-    """Returns (date_str, {cache_key: value, ...}) for all regions × {sst, anom}."""
+def aggregate_one(
+    nc_path: Path, region_ids: list[str] | None = None
+) -> tuple[str, dict[str, float]]:
+    """Returns (date_str, {cache_key: value, ...}) for the requested regions
+    × {sst, anom}. If region_ids is None, all regions defined in regions.py
+    are computed."""
     ymd = date_from_name(nc_path)
     if ymd is None:
         raise ValueError(f"Unrecognized filename: {nc_path}")
     y, m, d = ymd
     date_str = f"{y:04}-{m:02}-{d:02}"
+    regs = region_ids if region_ids is not None else regions.region_ids()
 
     with h5py.File(nc_path, "r") as hdf:
         lat_2d, lon_2d = latlon_2d(hdf)
         out: dict[str, float] = {}
         for ds_name in ("sst", "anom"):
             data = get_processed_array(hdf, ds_name)
-            for region_id in regions.region_ids():
+            for region_id in regs:
                 val = regions.aggregate(data, lat_2d, lon_2d, region_id)
                 key = f"{date_str}-oisst-{ds_name}-{region_id}"
                 out[key] = val
     return (date_str, out)
 
 
-def all_keys_present(date_str: str, cache: dict[str, float]) -> bool:
+def all_keys_present(date_str: str, cache: dict[str, float], region_ids: list[str]) -> bool:
     """All region × dataset keys for this date already cached?"""
     for ds in ("sst", "anom"):
-        for r in regions.region_ids():
+        for r in region_ids:
             if f"{date_str}-oisst-{ds}-{r}" not in cache:
                 return False
     return True
@@ -114,7 +120,26 @@ def main(argv: list[str] | None = None) -> int:
                         help="Parallel processes (each opens one NetCDF at a time)")
     parser.add_argument("--flush-every", type=int, default=50,
                         help="Save data-cache.json every N processed files")
+    parser.add_argument(
+        "--regions", type=str, default="",
+        help="Comma-separated region ids to recompute (default: all). "
+             "When set, every NetCDF in the archive is processed (the "
+             "all-keys-present skip is bypassed) and only the listed "
+             "regions are written to the cache. Useful for refreshing a "
+             "single basin after a mask change.",
+    )
     args = parser.parse_args(argv)
+
+    if args.regions:
+        region_ids = [r.strip() for r in args.regions.split(",") if r.strip()]
+        unknown = [r for r in region_ids if r not in regions.region_ids()]
+        if unknown:
+            print(f"❌ Unknown regions: {unknown}", file=sys.stderr)
+            print(f"Available: {regions.region_ids()}", file=sys.stderr)
+            return 1
+        print(f"Restricting recomputation to: {region_ids}")
+    else:
+        region_ids = regions.region_ids()
 
     if not args.archive_root.is_dir():
         print(f"❌ Archive not found: {args.archive_root}", file=sys.stderr)
@@ -126,15 +151,22 @@ def main(argv: list[str] | None = None) -> int:
     nc_files = sorted(args.archive_root.rglob("*.nc"))
     print(f"Found {len(nc_files)} NetCDF files in {args.archive_root}")
 
-    todo: list[Path] = []
-    for nc in nc_files:
-        ymd = date_from_name(nc)
-        if ymd is None:
-            continue
-        date_str = f"{ymd[0]:04}-{ymd[1]:02}-{ymd[2]:02}"
-        if not all_keys_present(date_str, cache):
-            todo.append(nc)
-    print(f"To compute: {len(todo)} files (skipping {len(nc_files) - len(todo)} fully cached)")
+    if args.regions:
+        # Targeted refresh: re-process every file, overwriting only the
+        # requested regions. The skip check would otherwise mask the fact
+        # that the existing cache entries are stale (wrong mask).
+        todo = [nc for nc in nc_files if date_from_name(nc) is not None]
+        print(f"To compute: {len(todo)} files (all, --regions overrides skip)")
+    else:
+        todo = []
+        for nc in nc_files:
+            ymd = date_from_name(nc)
+            if ymd is None:
+                continue
+            date_str = f"{ymd[0]:04}-{ymd[1]:02}-{ymd[2]:02}"
+            if not all_keys_present(date_str, cache, region_ids):
+                todo.append(nc)
+        print(f"To compute: {len(todo)} files (skipping {len(nc_files) - len(todo)} fully cached)")
 
     if not todo:
         print("Nothing to do.")
@@ -142,8 +174,9 @@ def main(argv: list[str] | None = None) -> int:
 
     started = time.time()
     n_done = 0
+    aggregate_fn = partial(aggregate_one, region_ids=region_ids)
     with ProcessPoolExecutor(max_workers=args.workers) as pool:
-        futures = {pool.submit(aggregate_one, nc): nc for nc in todo}
+        futures = {pool.submit(aggregate_fn, nc): nc for nc in todo}
         for fut in as_completed(futures):
             try:
                 date_str, entries = fut.result()
