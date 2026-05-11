@@ -1,22 +1,22 @@
 # SPDX-License-Identifier: MIT
-"""ECMWF ERA5 reanalysis source (single-levels SST + 2m air temp).
+"""ECMWF ERA5 reanalysis source (daily-mean SST + 2m air temp).
 
-Pulls one timestamp per day (12:00 UTC) from the Copernicus CDS, resamples
-the native 721×1440 ERA5 grid onto the 720×1440 OISST grid at fetch time,
-and stores the result locally as ``era5-YYYYMMDD.nc`` (still in Kelvin —
-unit conversion happens in :meth:`get_data_array` so the archive matches
-ERA5's native convention).
+Pulls the pre-computed daily mean (UTC day) for both variables from the
+Copernicus CDS ``derived-era5-single-levels-daily-statistics`` dataset,
+resamples the native 721×1440 ERA5 grid onto the 720×1440 OISST grid at
+fetch time, and stores the result locally as ``era5-YYYYMMDD.nc`` in
+Kelvin — unit conversion happens in :meth:`get_data_array` so the archive
+matches ERA5's native convention.
+
+Why daily-mean and not a fixed UTC timestamp? Earlier versions sampled at
+12:00 UTC, which made the globe visibly hotter on the sun-facing side and
+introduced a small but real bias that varied with longitude. The daily
+mean (24-hour average over UTC) matches OISST's daily-mean L4 product so
+the two sources are directly comparable.
 
 Why resample at fetch time and not aggregate time? The same regions/masks
 work unchanged for OISST and ERA5 once they share a grid, and the resampled
 file is ~30% smaller than the native one (no extra row at each pole).
-
-Why fixed 12:00 UTC instead of a daily mean? One CDS request per day, one
-license. A proper daily mean would need either 24× the data (averaging
-locally) or the separate ``derived-era5-single-levels-daily-statistics``
-dataset (extra license). The ~0.1°C systematic bias from sampling at noon
-UTC is small enough for the Trends-tab use case; revisit if the smoke
-comparison against OISST exceeds 0.5°C globally.
 """
 
 from __future__ import annotations
@@ -103,7 +103,16 @@ def _resample_to_oisst_grid(ds: "xr.Dataset") -> "xr.Dataset":
 
 
 def _do_cds_retrieve(date: datetime.date, out_path: Path) -> None:
-    """Synchronous CDS fetch of one timestamp + resample. Caller wraps in a thread."""
+    """Synchronous CDS fetch of one UTC daily-mean + resample.
+
+    The ``derived-era5-single-levels-daily-statistics`` endpoint returns a
+    zip bundle (one NetCDF per requested variable) regardless of
+    ``download_format`` — it logs ``"Download format not supported for this
+    dataset. Defaulting to as_source."`` and ignores the request. Handle
+    the zip explicitly: extract → ``xr.merge`` → resample → write.
+    """
+    import zipfile
+
     import cdsapi
     import xarray as xr
 
@@ -113,24 +122,45 @@ def _do_cds_retrieve(date: datetime.date, out_path: Path) -> None:
         "year": f"{date.year:04}",
         "month": f"{date.month:02}",
         "day": f"{date.day:02}",
-        "time": "12:00",
+        "daily_statistic": "daily_mean",
+        "time_zone": "utc+00:00",
+        "frequency": "1_hourly",
         "data_format": "netcdf",
-        "download_format": "unarchived",
     }
 
-    with tempfile.NamedTemporaryFile(suffix=".nc", delete=False) as tmp:
-        tmp_path = Path(tmp.name)
-    try:
+    with tempfile.TemporaryDirectory() as tmpdir_str:
+        tmpdir = Path(tmpdir_str)
+        zip_path = tmpdir / "response.zip"
+
         client = cdsapi.Client()
         try:
-            client.retrieve("reanalysis-era5-single-levels", request, str(tmp_path))
+            client.retrieve(
+                "derived-era5-single-levels-daily-statistics",
+                request,
+                str(zip_path),
+            )
         except Exception as e:
             raise Era5FetchError(f"CDS retrieve failed for {date}: {e}") from e
 
-        with xr.open_dataset(tmp_path) as native:
-            # Materialize (otherwise lazy reads break after the file is deleted)
-            # and resample in one pass.
-            resampled = _resample_to_oisst_grid(native).load()
+        # Extract the per-variable NetCDFs from the zip and merge into one
+        # dataset whose shape matches the previous single-levels API.
+        with zipfile.ZipFile(zip_path) as zf:
+            zf.extractall(tmpdir)
+        nc_files = sorted(tmpdir.glob("*.nc"))
+        if not nc_files:
+            raise Era5FetchError(
+                f"CDS response for {date} contained no NetCDFs: {[n.name for n in tmpdir.iterdir()]}"
+            )
+        # Load each file fully into memory then close — keeping the dataset
+        # objects "live" past tmpdir cleanup with `load()` avoids lazy-read
+        # IOErrors after the underlying files are deleted.
+        parts = []
+        for f in nc_files:
+            with xr.open_dataset(f) as ds:
+                parts.append(ds.load())
+        merged = xr.merge(parts, compat="override")
+        resampled = _resample_to_oisst_grid(merged).load()
+
         out_path.parent.mkdir(parents=True, exist_ok=True)
         # Compress data variables with zlib so the local archive stays small
         # (~2 MB/day vs ~16 MB uncompressed). Coords stay uncompressed — they're
@@ -140,8 +170,6 @@ def _do_cds_retrieve(date: datetime.date, out_path: Path) -> None:
             for v in resampled.data_vars
         }
         resampled.to_netcdf(out_path, encoding=encoding)
-    finally:
-        tmp_path.unlink(missing_ok=True)
 
 
 class Era5Source(DataSource):
