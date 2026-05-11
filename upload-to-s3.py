@@ -255,59 +255,95 @@ def generate_index_from_s3(bucket, s3_prefix, aws_access_key=None, aws_secret_ke
         else s3_prefix or ""
     )
 
-    # Find all dated texture files and time-series region JSONs in S3.
-    dates = set()
-    timeseries_regions = set()
+    # Find dated equirect textures + time-series region JSONs in S3.
+    # OISST uses the legacy unprefixed naming (sst-temp / sst-temp-anomaly);
+    # newer sources are prefixed as <date>-<source>-<dataset>-equirect.webp.
+    oisst_dates: set[str] = set()
+    per_source_dates: dict[str, set[str]] = {}
+    timeseries_regions: set[str] = set()
+
+    oisst_re = re.compile(r"(\d{4}-\d{2}-\d{2})-sst-temp-equirect\.webp$")
+    prefixed_re = re.compile(
+        r"(\d{4}-\d{2}-\d{2})-([a-z0-9]+)-[a-z0-9]+-equirect\.webp$"
+    )
+
     for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
         if "Contents" not in page:
             continue
 
         for obj in page["Contents"]:
-            # Key relative to the prefix (e.g. "timeseries/global.json")
             key_rel = obj["Key"][len(prefix):] if prefix else obj["Key"]
             filename = key_rel.split("/")[-1]
 
-            # Dated equirect textures: YYYY-MM-DD-sst-temp-equirect.webp
-            match = re.match(r"(\d{4}-\d{2}-\d{2})-sst-temp-equirect\.webp$", filename)
-            if match:
-                dates.add(match.group(1))
+            m = oisst_re.match(filename)
+            if m:
+                oisst_dates.add(m.group(1))
+                continue
 
-            # Time-series region files: timeseries/<region>.json
+            m = prefixed_re.match(filename)
+            if m:
+                per_source_dates.setdefault(m.group(2), set()).add(m.group(1))
+                continue
+
             ts_match = re.match(r"timeseries/([A-Za-z0-9_]+)\.json$", key_rel)
             if ts_match:
                 timeseries_regions.add(ts_match.group(1))
 
-    # Create index with sorted dates (newest last) and discovered regions.
-    dates_list = sorted(list(dates))
-    regions_list = sorted(list(timeseries_regions))
+    # Build per-source date lists. OISST's unprefixed scheme means we attribute
+    # its dated textures explicitly here.
+    if oisst_dates:
+        per_source_dates.setdefault("oisst", set()).update(oisst_dates)
 
-    # Discover sources by reading one of the per-region timeseries JSONs and
-    # taking its `sources` keys. This is more reliable than parsing S3 keys
-    # since OISST's legacy texture files are unprefixed (no `-oisst-` segment).
-    sources_list: list[str] = []
+    sources_meta: dict[str, dict] = {}
+    union_dates: set[str] = set()
+    for src, ds in per_source_dates.items():
+        sorted_ds = sorted(ds)
+        sources_meta[src] = {
+            "dates": sorted_ds,
+            "latest": sorted_ds[-1] if sorted_ds else None,
+        }
+        union_dates.update(ds)
+
+    # Top-level dates: union across sources (so the date slider covers every
+    # date that *any* source has a texture for; the frontend filters by source
+    # when needed). `latest` follows OISST's latest for back-compat.
+    dates_list = sorted(union_dates)
+    regions_list = sorted(timeseries_regions)
+
+    # Discover the set of timeseries sources by reading one of the per-region
+    # JSONs (these are populated by export_timeseries.py from the cache).
+    timeseries_sources_list: list[str] = []
     if regions_list:
         probe_key = f"{prefix}timeseries/{regions_list[0]}.json"
         try:
             obj = s3_client.get_object(Bucket=bucket, Key=probe_key)
             payload = json.loads(obj["Body"].read())
-            sources_list = sorted(list(payload.get("sources", {}).keys()))
+            timeseries_sources_list = sorted(list(payload.get("sources", {}).keys()))
         except Exception as e:
             print(f"  ⚠️  Could not probe sources via {probe_key}: {e}")
 
     index = {
         "dates": dates_list,
-        "latest": dates_list[-1] if dates_list else None,
-        "timeseries": {"regions": regions_list, "sources": sources_list},
+        "latest": (
+            sources_meta.get("oisst", {}).get("latest")
+            or (dates_list[-1] if dates_list else None)
+        ),
+        "sources": sources_meta,
+        "timeseries": {"regions": regions_list, "sources": timeseries_sources_list},
     }
 
-    print(f"Generated index from S3 with {len(dates_list)} dates")
+    print(f"Generated index from S3 with {len(dates_list)} dates (union of all sources)")
     if dates_list:
-        print(f"  Date range: {dates_list[0]} to {dates_list[-1]}")
-        print(f"  Latest: {index['latest']}")
+        print(f"  Union date range: {dates_list[0]} to {dates_list[-1]}")
+        print(f"  Latest (OISST): {index['latest']}")
+    for src, meta in sorted(sources_meta.items()):
+        n = len(meta["dates"])
+        rng = f"{meta['dates'][0]} → {meta['latest']}" if n > 0 else "(empty)"
+        print(f"  {src}: {n} dated textures, {rng}")
     if regions_list:
         print(f"  Time-series regions: {', '.join(regions_list)}")
-    if sources_list:
-        print(f"  Time-series sources: {', '.join(sources_list)}")
+    if timeseries_sources_list:
+        print(f"  Time-series sources: {', '.join(timeseries_sources_list)}")
 
     # Validate data completeness
     print()
