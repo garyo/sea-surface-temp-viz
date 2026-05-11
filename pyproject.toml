@@ -7,6 +7,7 @@ dependencies = [
     "aiohttp>=3.13.4",
     "boto3>=1.35.0",
     "cdsapi>=0.7.4",
+    "gcsfs>=2026.5.0",
     "h5py>=3.16.0",
     "matplotlib>3.9.0",
     "netcdf4>=1.7.1",
@@ -16,6 +17,7 @@ dependencies = [
     "scipy>=1.14.0",
     "urllib3>=2.2.2",
     "xarray>=2024.10.0",
+    "zarr>=3.2.1",
 ]
 
 # Pyright language server: use our .venv
