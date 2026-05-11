@@ -18,7 +18,7 @@ GitHub Actions workflow `.github/workflows/make-images.yml` runs nightly at 13:1
 
   ```sh
   uv run prune-cache.py --inplace --days 90
-  uv run sea-surface-temps.py --mode graph --dataset sst --out /tmp/x.png
+  uv run pipeline.py --source oisst --mode graph --dataset sst --out /tmp/x.png
   ```
 
 - **Cache key** format: `YYYY-MM-DD-{sst|anom}` → float (global cosine-lat-weighted average across ±60° latitude). Phase 2 of the plan migrates this to a nested per-source/region/dataset shape — coordinate via the plan file.

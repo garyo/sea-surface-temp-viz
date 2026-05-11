@@ -23,17 +23,17 @@ jobs:
       run: |
         uv run prune-cache.py --inplace --days 90 # Re-fetch most recent 90 days, in case of reanalysis
         mkdir -p ./output
-        uv run sea-surface-temps.py --mode graph --dataset sst --out ./output/sst-all.png
-        uv run sea-surface-temps.py --mode graph --dataset anom --out ./output/sst-all-anom.png
-        uv run sea-surface-temps.py --mode graph --dataset sst --out ./output/sst-all.svg
-        uv run sea-surface-temps.py --mode graph --dataset anom --out ./output/sst-all-anom.svg
+        uv run pipeline.py --source oisst --mode graph --dataset sst --out ./output/sst-all.png
+        uv run pipeline.py --source oisst --mode graph --dataset anom --out ./output/sst-all-anom.png
+        uv run pipeline.py --source oisst --mode graph --dataset sst --out ./output/sst-all.svg
+        uv run pipeline.py --source oisst --mode graph --dataset anom --out ./output/sst-all-anom.svg
 
     # Maps: OK if these fail; we're looking for yesterday, might not be there yet.
     - name: Generate maps
       run: |
         mkdir -p ./output
-        uv run sea-surface-temps.py --mode map --dataset sst --days-ago 2 --out ./output || true
-        uv run sea-surface-temps.py --mode map --dataset anom --days-ago 2 --out ./output || true
+        uv run pipeline.py --source oisst --mode map --dataset sst --days-ago 2 --out ./output || true
+        uv run pipeline.py --source oisst --mode map --dataset anom --days-ago 2 --out ./output || true
 
     # This generates textures (.webp) and associated colormap json files (-metadata.json)
     # Generate for the last 7 days to build up a time series (and catch any missed days)
@@ -43,8 +43,8 @@ jobs:
         mkdir -p ./maps
         for days_ago in 2 3 4 5 6 7 8; do
           echo "Generating textures for $days_ago days ago..."
-          uv run sea-surface-temps.py --mode texture --dataset sst --days-ago $days_ago --out ./maps || true
-          uv run sea-surface-temps.py --mode texture --dataset anom --days-ago $days_ago --out ./maps || true
+          uv run pipeline.py --source oisst --mode texture --dataset sst --days-ago $days_ago --out ./maps || true
+          uv run pipeline.py --source oisst --mode texture --dataset anom --days-ago $days_ago --out ./maps || true
         done
 
     # Export aggregated time-series JSON for the web frontend (Trends tab).

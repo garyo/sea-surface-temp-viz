@@ -36,5 +36,5 @@ echo "Processing days $START_DAY to $END_DAY"
 
 # Generate all combinations and run in parallel
 parallel -j $N --line-buffer \
-  'echo "Doing {1} days ago, dataset {2}"; uv run sea-surface-temps.py --mode texture --dataset {2} --days-ago {1} --out maps' \
+  'echo "Doing {1} days ago, dataset {2}"; uv run pipeline.py --source oisst --mode texture --dataset {2} --days-ago {1} --out maps' \
   ::: $(seq $START_DAY $END_DAY) ::: anom sst

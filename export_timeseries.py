@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 """Export aggregated time-series from data-cache.json to one JSON per region.
 
-Reads the on-disk cache populated by sea-surface-temps.py — keys are
+Reads the on-disk cache populated by pipeline.py — keys are
 ``YYYY-MM-DD-{source}-{dataset}-{region}`` — and emits
 
     {out_dir}/{region}.json
@@ -107,7 +107,7 @@ def main(argv: list[str] | None = None) -> int:
         "--cache-file",
         type=Path,
         default=Path("./data-cache.json"),
-        help="Input cache file produced by sea-surface-temps.py",
+        help="Input cache file produced by pipeline.py",
     )
     parser.add_argument(
         "--out-dir",
