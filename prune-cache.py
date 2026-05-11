@@ -15,16 +15,32 @@ def parse_cache_date(datestr: str):
     return datetime.date(int(yr), int(mo), int(day))
 
 
-def prune_cache_file(infile: str, outfile: str, days_before_today):
+def cache_source(key: str) -> str | None:
+    """Return the source segment of a cache key (e.g. "oisst", "era5") or None."""
+    parts = key.split("-")
+    return parts[3] if len(parts) >= 6 else None
+
+
+def prune_cache_file(infile: str, outfile: str, days_before_today, sources):
+    """Prune recent entries (last `days_before_today` days) for the named sources.
+
+    Entries from sources NOT in `sources` are kept regardless of date — the
+    daily workflow only re-fetches the listed sources, so pruning the others
+    just creates gaps that never get filled back in.
+    """
     with open(infile, "r") as f:
         json_data = json.load(f)
 
     pruned = {}
     today = datetime.date.today()
     for key, value in json_data.items():
+        src = cache_source(key)
+        if src not in sources:
+            # Source not slated for re-fetch — keep regardless of age.
+            pruned[key] = value
+            continue
         date = parse_cache_date(key)
         delta = (today - date).days
-        # print(f"{today} - {date}: delta={delta}")
         if delta > days_before_today:
             pruned[key] = value
 
@@ -83,11 +99,19 @@ def main(argv=None):
             default="./data-cache.json",
             help="""Input cache file""",
         )
+        parser.add_argument(
+            "--sources",
+            default="oisst",
+            help="Comma-separated source ids to prune (default: oisst). "
+                 "Sources not listed here are kept regardless of date — useful "
+                 "when only some sources are re-fetched by the daily cron.",
+        )
         args = parser.parse_args(argv)
 
         if args.inplace:
             args.out = args.infile
-        prune_cache_file(args.infile, args.out, args.days)
+        sources = {s.strip() for s in args.sources.split(",") if s.strip()}
+        prune_cache_file(args.infile, args.out, args.days, sources)
 
     except RuntimeError as e:
         print(e)
