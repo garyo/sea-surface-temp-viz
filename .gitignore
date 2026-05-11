@@ -8,4 +8,6 @@ README-local.md
 maps
 __pycache__/
 netcdf-archive/
+era5-archive/
+logs/
 .venv/

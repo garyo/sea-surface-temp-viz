@@ -1,6 +1,8 @@
 # sea-surface-temp-viz
 
-Python data pipeline that downloads NOAA OISST sea-surface temperature data nightly, computes aggregates, generates equirectangular WebP textures, and exports time-series JSON. Outputs feed the interactive site at https://globe-viz.oberbrunner.com.
+Python data pipeline that downloads climate data nightly (NOAA OISST sea-surface temperature + ECMWF ERA5 reanalysis SST/2m air temp), computes regional aggregates, generates equirectangular WebP textures, and exports time-series JSON. Outputs feed the interactive site at https://globe-viz.oberbrunner.com.
+
+Despite the legacy repo name, this is now a multi-source pipeline. New sources plug in by subclassing `sources.DataSource` (see `sources/oisst.py` and `sources/era5.py` as the reference implementations).
 
 ## Sister repo
 
@@ -21,7 +23,9 @@ GitHub Actions workflow `.github/workflows/make-images.yml` runs nightly at 13:1
   uv run pipeline.py --source oisst --mode graph --dataset sst --out /tmp/x.png
   ```
 
-- **Cache key** format: `YYYY-MM-DD-{sst|anom}` → float (global cosine-lat-weighted average across ±60° latitude). Phase 2 of the plan migrates this to a nested per-source/region/dataset shape — coordinate via the plan file.
+- **Cache key** format: `YYYY-MM-DD-{source}-{dataset}-{region}` → float (cosine-lat-weighted average over the named region). Source is `oisst` or `era5`; dataset is one of the source's exposed names (`sst`/`anom` for OISST, `sst`/`t2m` for ERA5); region is one of `regions.REGIONS`. `pipeline.py` and `scripts/aggregate_archive.py` both write this same shape.
+
+- **ERA5 archive** lives under `./era5-archive/YYYY/era5-YYYYMMDD.nc` (gitignored). Files are pre-resampled to the OISST 720×1440 grid + zlib-compressed at fetch time (~3 MB/day). `scripts/backfill_era5.py` does an overnight bulk fetch; the daily cron tops it up via `pipeline.py --source era5 --mode texture`. Requires `~/.cdsapirc` locally and the `CDS_API_KEY` GH secret.
 
 - **`export_timeseries.py`** writes one JSON per region into `maps/timeseries/`. `upload-to-s3.py` walks subdirs recursively, so they land at `sea-surface-temp/timeseries/{region}.json` on S3. Don't flatten that layout — `index.json`'s `timeseries.regions` field is regenerated from the directory structure.
 

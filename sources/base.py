@@ -51,6 +51,16 @@ class DataSource(ABC):
     id: str
     grid_shape: tuple[int, int]
     datasets: dict[str, DatasetSpec]
+    archive_root: Path  # default location for the local NetCDF archive
+
+    @staticmethod
+    @abstractmethod
+    def date_from_filename(path: Path) -> tuple[int, int, int] | None:
+        """Parse ``(year, month, day)`` from an archive filename, or None.
+
+        Each source's archive uses its own naming convention (OISST:
+        ``oisst-avhrr-v02r01.YYYYMMDD.nc``, ERA5: ``era5-YYYYMMDD.nc``).
+        """
 
     @abstractmethod
     async def fetch(

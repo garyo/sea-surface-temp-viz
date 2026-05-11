@@ -1,8 +1,4 @@
 #!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.12"
-# dependencies = ["h5py", "numpy"]
-# ///
 # SPDX-License-Identifier: MIT
 """Compute regional aggregates from a local source archive into data-cache.json.
 
@@ -25,7 +21,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -37,17 +32,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import regions  # noqa: E402
 from sources import SOURCES  # noqa: E402
 
-OISST_NAME_RE = re.compile(
-    r"oisst-avhrr-v02r01\.(\d{4})(\d{2})(\d{2})(?:_preliminary)?\.nc$"
-)
-
-
-def date_from_name(path: Path) -> tuple[int, int, int] | None:
-    m = OISST_NAME_RE.match(path.name)
-    if not m:
-        return None
-    return int(m.group(1)), int(m.group(2)), int(m.group(3))
-
 
 def aggregate_one(
     nc_path: Path,
@@ -58,14 +42,14 @@ def aggregate_one(
     regions × every dataset the source exposes. If ``region_ids`` is None,
     all regions defined in regions.py are computed.
     """
-    ymd = date_from_name(nc_path)
+    source = SOURCES[source_id]()
+    ymd = source.date_from_filename(nc_path)
     if ymd is None:
-        raise ValueError(f"Unrecognized filename: {nc_path}")
+        raise ValueError(f"Unrecognized filename for source {source_id}: {nc_path}")
     y, m, d = ymd
     date_str = f"{y:04}-{m:02}-{d:02}"
     regs = region_ids if region_ids is not None else regions.region_ids()
 
-    source = SOURCES[source_id]()
     out: dict[str, float] = {}
     with source.open_local(nc_path) as raw:
         lat_2d, lon_2d = source.latlon_2d(raw)
@@ -110,7 +94,12 @@ def save_cache(path: Path, cache: dict[str, float]) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", default="oisst", choices=sorted(SOURCES.keys()))
-    parser.add_argument("--archive-root", type=Path, default=Path("./netcdf-archive"))
+    parser.add_argument(
+        "--archive-root",
+        type=Path,
+        default=None,
+        help="Local NetCDF archive (default: source-specific, e.g. ./netcdf-archive for oisst)",
+    )
     parser.add_argument("--cache-file", type=Path, default=Path("./data-cache.json"))
     parser.add_argument("--workers", type=int, default=4,
                         help="Parallel processes (each opens one NetCDF at a time)")
@@ -128,6 +117,8 @@ def main(argv: list[str] | None = None) -> int:
 
     source_cls = SOURCES[args.source]
     dataset_ids = list(source_cls.datasets.keys())
+    archive_root: Path = args.archive_root or source_cls.archive_root
+    args.archive_root = archive_root  # also feeds the existence check below
 
     if args.regions:
         region_ids = [r.strip() for r in args.regions.split(",") if r.strip()]
@@ -154,12 +145,12 @@ def main(argv: list[str] | None = None) -> int:
         # Targeted refresh: re-process every file, overwriting only the
         # requested regions. The skip check would otherwise mask the fact
         # that the existing cache entries are stale (wrong mask).
-        todo = [nc for nc in nc_files if date_from_name(nc) is not None]
+        todo = [nc for nc in nc_files if source_cls.date_from_filename(nc) is not None]
         print(f"To compute: {len(todo)} files (all, --regions overrides skip)")
     else:
         todo = []
         for nc in nc_files:
-            ymd = date_from_name(nc)
+            ymd = source_cls.date_from_filename(nc)
             if ymd is None:
                 continue
             date_str = f"{ymd[0]:04}-{ymd[1]:02}-{ymd[2]:02}"

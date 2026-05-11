@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import datetime
 import io
+import re
 from contextlib import AbstractContextManager, contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterator
@@ -20,6 +21,11 @@ from .base import DataSource, DatasetSpec
 
 if TYPE_CHECKING:
     import aiohttp
+
+
+_FILENAME_RE = re.compile(
+    r"oisst-avhrr-v02r01\.(\d{4})(\d{2})(\d{2})(?:_preliminary)?\.nc$"
+)
 
 
 class DataFetchError(Exception):
@@ -75,6 +81,14 @@ _OISST_ANOM_CMAP: list[list[Any]] = [
 class OisstSource(DataSource):
     id = "oisst"
     grid_shape = (720, 1440)
+    archive_root = Path("./netcdf-archive")
+
+    @staticmethod
+    def date_from_filename(path: Path) -> tuple[int, int, int] | None:
+        m = _FILENAME_RE.match(path.name)
+        if not m:
+            return None
+        return int(m.group(1)), int(m.group(2)), int(m.group(3))
 
     datasets = {
         "sst": DatasetSpec(
