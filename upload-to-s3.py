@@ -280,10 +280,24 @@ def generate_index_from_s3(bucket, s3_prefix, aws_access_key=None, aws_secret_ke
     # Create index with sorted dates (newest last) and discovered regions.
     dates_list = sorted(list(dates))
     regions_list = sorted(list(timeseries_regions))
+
+    # Discover sources by reading one of the per-region timeseries JSONs and
+    # taking its `sources` keys. This is more reliable than parsing S3 keys
+    # since OISST's legacy texture files are unprefixed (no `-oisst-` segment).
+    sources_list: list[str] = []
+    if regions_list:
+        probe_key = f"{prefix}timeseries/{regions_list[0]}.json"
+        try:
+            obj = s3_client.get_object(Bucket=bucket, Key=probe_key)
+            payload = json.loads(obj["Body"].read())
+            sources_list = sorted(list(payload.get("sources", {}).keys()))
+        except Exception as e:
+            print(f"  ⚠️  Could not probe sources via {probe_key}: {e}")
+
     index = {
         "dates": dates_list,
         "latest": dates_list[-1] if dates_list else None,
-        "timeseries": {"regions": regions_list},
+        "timeseries": {"regions": regions_list, "sources": sources_list},
     }
 
     print(f"Generated index from S3 with {len(dates_list)} dates")
@@ -292,6 +306,8 @@ def generate_index_from_s3(bucket, s3_prefix, aws_access_key=None, aws_secret_ke
         print(f"  Latest: {index['latest']}")
     if regions_list:
         print(f"  Time-series regions: {', '.join(regions_list)}")
+    if sources_list:
+        print(f"  Time-series sources: {', '.join(sources_list)}")
 
     # Validate data completeness
     print()

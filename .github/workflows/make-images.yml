@@ -47,6 +47,29 @@ jobs:
           uv run pipeline.py --source oisst --mode texture --dataset anom --days-ago $days_ago --out ./maps || true
         done
 
+    # ERA5 textures + cache entries (SST + 2 m air temp). ERA5 has ~5-day
+    # latency, so we start at days_ago=7 and grab a few days back to cover
+    # gaps. The pipeline.py fetch caches resampled NetCDFs under era5-archive/
+    # but that directory is ephemeral on GH Actions (not committed) — fine,
+    # the cache.json values persist across runs and the texture WebPs go to S3.
+    - name: Generate ERA5 textures
+      env:
+        CDS_API_KEY: ${{ secrets.CDS_API_KEY }}
+      run: |
+        # Write the cdsapi config the cdsapi client expects
+        printf 'url: https://cds.climate.copernicus.eu/api\nkey: %s\n' "$CDS_API_KEY" > ~/.cdsapirc
+        chmod 600 ~/.cdsapirc
+        for days_ago in 7 8 9 10; do
+          echo "Generating ERA5 textures for $days_ago days ago..."
+          uv run pipeline.py --source era5 --mode texture --dataset sst --days-ago $days_ago --out ./maps || true
+          uv run pipeline.py --source era5 --mode texture --dataset t2m --days-ago $days_ago --out ./maps || true
+        done
+        # The texture step downloaded daily NetCDFs into era5-archive/.
+        # Aggregate them into data-cache.json so export_timeseries below picks
+        # up today's ERA5 values. (data-cache.json is not committed back from
+        # CI — historical ERA5 entries come from the committed backfill.)
+        uv run scripts/aggregate_archive.py --source era5 --workers 2 || true
+
     # Export aggregated time-series JSON for the web frontend (Trends tab).
     # Reads sst-data-cache.json (already up to date from the graph step) and
     # writes one JSON per region under maps/timeseries/, which ships to S3.
@@ -87,6 +110,10 @@ jobs:
            maps/*-sst-temp-equirect-metadata.json
            maps/*-sst-temp-anomaly-equirect.webp
            maps/*-sst-temp-anomaly-equirect-metadata.json
+           maps/*-era5-sst-equirect.webp
+           maps/*-era5-sst-equirect-metadata.json
+           maps/*-era5-t2m-equirect.webp
+           maps/*-era5-t2m-equirect-metadata.json
            maps/index.json
                       
     - name: Upload files to S3 and generate index
