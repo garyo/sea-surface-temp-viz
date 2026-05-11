@@ -56,17 +56,20 @@ _ERA5_SST_CMAP: list[list[Any]] = [
     [35, "#470000"],
 ]
 
-# 2m air-temperature spans a wider range than SST (Antarctica gets to ~−80°C,
-# subtropical deserts to ~50°C). Diverging palette centered at 0°C.
+# 2m air-temperature shares SST's 0–32°C anchors so switching SST↔t2m gives
+# directly comparable colors in the populated temperature range; the upper end
+# extends to 45°C for hot land that SST never sees. Sub-zero regions
+# (Antarctica, NH winter, polar night) clip to darkblue — those values are all
+# uniformly "very cold" and dedicating cmap range to resolving −10°C vs −50°C
+# would squash detail in the 0–35°C band where most populated land lives.
 _ERA5_T2M_CMAP: list[list[Any]] = [
-    [-60, "#08306b"],   # deep blue (extreme cold)
-    [-40, "#2171b5"],
-    [-20, "#9ecae1"],
-    [0,   "white"],
-    [10,  "#fee391"],
-    [20,  "#fe9929"],
-    [30,  "#cc4c02"],
-    [45,  "#7f0000"],
+    [0,  "darkblue"],
+    [20, "white"],
+    [24, "yellow"],
+    [28, "orange"],
+    [30, "red"],
+    [32, "darkred"],
+    [45, "#470000"],
 ]
 
 
