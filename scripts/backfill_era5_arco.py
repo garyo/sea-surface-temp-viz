@@ -46,7 +46,10 @@ ARCO_VARS = {
     "2m_temperature": "t2m",
 }
 
-DEFAULT_START = datetime.date(2021, 1, 1)
+# Match OISST's start date (1982-01-01) so the Trends tab can compare both
+# sources across the same 44-year span. ARCO actually goes back to 1940-01-01
+# if a longer baseline is ever needed.
+DEFAULT_START = datetime.date(1982, 1, 1)
 
 
 def open_arco() -> xr.Dataset:
