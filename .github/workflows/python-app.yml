@@ -31,7 +31,15 @@ jobs:
         uv run flake8 *.py --count --select=E9,F63,F7,F82 --show-source --statistics
         # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
         uv run flake8 *.py --count --exit-zero --max-complexity=28 --max-line-length=127 --statistics
-    - name: Test
+    - name: Test OISST pipeline
       run: |
-        uv run --frozen sea-surface-temps.py --mode map --dataset sst --days-ago 4
-        uv run --frozen sea-surface-temps.py --mode map --dataset anom --days-ago 4
+        uv run --frozen pipeline.py --source oisst --mode map --dataset sst  --days-ago 4
+        uv run --frozen pipeline.py --source oisst --mode map --dataset anom --days-ago 4
+    # ERA5 fetch requires a CDS API key, so we only smoke-test that the source
+    # module imports cleanly and registers with the CLI. Catches rename/import
+    # regressions like the one that broke this workflow when sea-surface-temps.py
+    # became pipeline.py.
+    - name: Smoke-test ERA5 source wiring
+      run: |
+        uv run --frozen python -c "from sources.era5 import Era5Source; print('era5 import ok')"
+        uv run --frozen pipeline.py --source era5 --help > /dev/null
