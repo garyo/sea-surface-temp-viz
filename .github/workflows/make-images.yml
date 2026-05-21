@@ -47,11 +47,12 @@ jobs:
           uv run pipeline.py --source oisst --mode texture --dataset anom --days-ago $days_ago --out ./maps || true
         done
 
-    # ERA5 textures + cache entries (SST + 2 m air temp). ERA5 has ~5-day
-    # latency, so we start at days_ago=7 and grab a few days back to cover
-    # gaps. The pipeline.py fetch caches resampled NetCDFs under era5-archive/
-    # but that directory is ephemeral on GH Actions (not committed) — fine,
-    # the cache.json values persist across runs and the texture WebPs go to S3.
+    # ERA5 textures + cache entries (SST + 2 m air temp). ERA5T typically
+    # has ~5-day latency, but it varies — try every day from yesterday back
+    # to 10 days ago and let `|| true` swallow misses. The pipeline.py fetch
+    # caches resampled NetCDFs under era5-archive/ but that directory is
+    # ephemeral on GH Actions (not committed) — fine, the cache.json values
+    # persist across runs and the texture WebPs go to S3.
     - name: Generate ERA5 textures
       env:
         CDS_API_KEY: ${{ secrets.CDS_API_KEY }}
@@ -59,11 +60,15 @@ jobs:
         # Write the cdsapi config the cdsapi client expects
         printf 'url: https://cds.climate.copernicus.eu/api\nkey: %s\n' "$CDS_API_KEY" > ~/.cdsapirc
         chmod 600 ~/.cdsapirc
-        for days_ago in 7 8 9 10; do
+        # Fetch up to 4 days in parallel — CDS tolerates a handful of
+        # concurrent requests per user. Each day keeps sst→t2m sequential so
+        # t2m hits the local NetCDF cache instead of re-requesting from CDS.
+        printf '%s\n' 1 2 3 4 5 6 7 8 9 10 | xargs -I{} -P 4 bash -c '
+          days_ago="$1"
           echo "Generating ERA5 textures for $days_ago days ago..."
-          uv run pipeline.py --source era5 --mode texture --dataset sst --days-ago $days_ago --out ./maps || true
-          uv run pipeline.py --source era5 --mode texture --dataset t2m --days-ago $days_ago --out ./maps || true
-        done
+          uv run pipeline.py --source era5 --mode texture --dataset sst --days-ago "$days_ago" --out ./maps || true
+          uv run pipeline.py --source era5 --mode texture --dataset t2m --days-ago "$days_ago" --out ./maps || true
+        ' _ {}
         # The texture step downloaded daily NetCDFs into era5-archive/.
         # Aggregate them into data-cache.json so export_timeseries below picks
         # up today's ERA5 values. (data-cache.json is not committed back from
