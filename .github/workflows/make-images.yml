@@ -63,11 +63,18 @@ jobs:
         # Fetch up to 4 days in parallel — CDS tolerates a handful of
         # concurrent requests per user. Each day keeps sst→t2m sequential so
         # t2m hits the local NetCDF cache instead of re-requesting from CDS.
+        # If the sst fetch failed (day not yet published by ERA5T), the cache
+        # file won't exist, so skip t2m to avoid a guaranteed-fail repeat.
         printf '%s\n' 1 2 3 4 5 6 7 8 9 10 | xargs -I{} -P 4 bash -c '
           days_ago="$1"
           echo "Generating ERA5 textures for $days_ago days ago..."
           uv run pipeline.py --source era5 --mode texture --dataset sst --days-ago "$days_ago" --out ./maps || true
-          uv run pipeline.py --source era5 --mode texture --dataset t2m --days-ago "$days_ago" --out ./maps || true
+          target=$(date -u -d "$days_ago days ago" +%Y%m%d)
+          if [ -f "era5-archive/${target:0:4}/era5-${target}.nc" ]; then
+            uv run pipeline.py --source era5 --mode texture --dataset t2m --days-ago "$days_ago" --out ./maps || true
+          else
+            echo "Skipping t2m for $days_ago days ago — no cached NetCDF (sst fetch failed)"
+          fi
         ' _ {}
         # The texture step downloaded daily NetCDFs into era5-archive/.
         # Aggregate them into data-cache.json so export_timeseries below picks
