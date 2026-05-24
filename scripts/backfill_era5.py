@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import json
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -55,6 +56,24 @@ def download_one(
         return (d, f"fail: {type(e).__name__}: {e}")
 
 
+def cached_era5_dates(cache_file: Path) -> set[str]:
+    """Return the set of ISO date strings for which the cache already has an
+    ERA5 sst/global entry. Used by the daily cron to skip dates already
+    aggregated, so the ephemeral CI archive doesn't re-pull every historical
+    day on every run.
+    """
+    with cache_file.open() as f:
+        cache = json.load(f)
+    out: set[str] = set()
+    for key in cache:
+        # Key shape: YYYY-MM-DD-era5-sst-global (and others). One probe per
+        # date is enough — aggregate_archive writes all (dataset × region)
+        # entries together, so any one present implies all present.
+        if "-era5-sst-global" in key:
+            out.add(key[:10])
+    return out
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -80,14 +99,35 @@ def main(argv: list[str] | None = None) -> int:
         default=6,
         help="Concurrent CDS requests (CDS itself caps each user around 6)",
     )
+    parser.add_argument(
+        "--cache-file",
+        type=Path,
+        default=None,
+        help="If given, skip dates already present in this data-cache.json "
+             "(in addition to skipping dates whose NetCDF already exists "
+             "locally). Used by the daily cron to gap-fill missing dates "
+             "without redownloading the entire history.",
+    )
     args = parser.parse_args(argv)
 
     args.archive_root.mkdir(parents=True, exist_ok=True)
     dates = list(date_range(args.start, args.end))
+    if args.cache_file and args.cache_file.exists():
+        cached = cached_era5_dates(args.cache_file)
+        before = len(dates)
+        dates = [d for d in dates if d.isoformat() not in cached]
+        print(
+            f"Cache filter: {len(dates)} dates to consider "
+            f"({before - len(dates)} already in {args.cache_file})"
+        )
     print(f"Backfilling ERA5: {args.start} → {args.end} ({len(dates)} days)")
     print(f"Archive root: {args.archive_root.resolve()}")
     print(f"Workers: {args.workers}")
     print()
+
+    if not dates:
+        print("Nothing to fetch.")
+        return 0
 
     started = time.time()
     ok = skip = fail = 0

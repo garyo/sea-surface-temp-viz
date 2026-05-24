@@ -76,6 +76,16 @@ jobs:
             echo "Skipping t2m for $days_ago days ago — no cached NetCDF (sst fetch failed)"
           fi
         ' _ {}
+        # Gap-fill: any recent date that the texture loop above missed (or
+        # that previous CI runs failed on, when ERA5T wasn't yet published)
+        # falls out of the 10-day window forever otherwise. backfill_era5.py
+        # with --cache-file skips dates we already have, so this is cheap on
+        # a healthy run (0 fetches) and self-healing when CDS had hiccups.
+        uv run scripts/backfill_era5.py \
+          --start "$(date -u -d '30 days ago' +%Y-%m-%d)" \
+          --end "$(date -u -d '1 day ago' +%Y-%m-%d)" \
+          --cache-file ./data-cache.json \
+          --workers 4 || true
         # The texture step downloaded daily NetCDFs into era5-archive/.
         # Aggregate them into data-cache.json so export_timeseries below picks
         # up today's ERA5 values. (data-cache.json is not committed back from
