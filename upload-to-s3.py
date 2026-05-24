@@ -16,19 +16,46 @@ from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 
 
+# Cache policy by extension.
+# - JSON files (timeseries/*.json, index.json) are mutable — replaced every
+#   nightly run — so a short TTL is what we want. Without an explicit header,
+#   S3 sends none and browsers cache heuristically (sometimes hours), which
+#   pinned the chart on stale data for users after the nightly update.
+# - WebP textures and -metadata.json siblings are date-stamped in the filename
+#   and never change once written, so a longer TTL is safe and saves bandwidth
+#   when users scrub the time slider.
+CACHE_CONTROL_BY_EXT = {
+    ".json": "public, max-age=300",      # 5 min: small files, freshness matters
+    ".webp": "public, max-age=86400",    # 1 day: date-stamped, immutable in practice
+    ".png":  "public, max-age=86400",
+    ".svg":  "public, max-age=86400",
+}
+
+
+def cache_control_for(local_path) -> str | None:
+    return CACHE_CONTROL_BY_EXT.get(Path(local_path).suffix.lower())
+
+
 def upload_file_to_s3(s3_client, local_path, bucket, s3_key, dry_run=False):
     """Upload a single file to S3."""
     if dry_run:
         print(f"[DRY RUN] Would upload: {local_path} -> s3://{bucket}/{s3_key}")
         return
 
+    extra_args = {}
+    cc = cache_control_for(local_path)
+    if cc:
+        extra_args["CacheControl"] = cc
+
     try:
         print(f"Uploading: {local_path} -> s3://{bucket}/{s3_key}")
+        kwargs = {"ExtraArgs": extra_args} if extra_args else {}
         s3_client.upload_file(
             str(local_path),
             bucket,
             s3_key,
             # Note: Not setting ACL - bucket policy should control public access
+            **kwargs,
         )
         print(f"  ✓ Uploaded successfully")
     except Exception as e:
