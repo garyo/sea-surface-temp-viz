@@ -174,6 +174,39 @@ def enumerate_months(start: datetime.date, end: datetime.date) -> list[tuple[int
     return months
 
 
+def load_checkpoint(
+    path: Path,
+) -> tuple[np.ndarray, np.ndarray, set[tuple[int, int]]] | None:
+    """Load (sum_grid, count_grid, completed_months) from a checkpoint .npz."""
+    if not path.exists():
+        return None
+    data = np.load(path, allow_pickle=False)
+    completed: set[tuple[int, int]] = {
+        (int(row[0]), int(row[1])) for row in data["completed"]
+    }
+    return data["sum_grid"], data["count_grid"], completed
+
+
+def save_checkpoint(
+    path: Path,
+    sum_grid: np.ndarray,
+    count_grid: np.ndarray,
+    completed: set[tuple[int, int]],
+) -> None:
+    """Atomic-replace checkpoint write (full overwrite each time)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    # Open as file handle so np.savez doesn't auto-append a second .npz suffix.
+    with tmp.open("wb") as fh:
+        np.savez(
+            fh,
+            sum_grid=sum_grid,
+            count_grid=count_grid,
+            completed=np.array(sorted(completed), dtype=np.int16),
+        )
+    tmp.replace(path)
+
+
 def accumulate_month(
     ds: "xr.Dataset",
     sum_grid: np.ndarray,
@@ -259,45 +292,79 @@ def build(
     out_path: Path,
     workers: int,
     smoothing_window: int,
+    checkpoint_every: int = 12,
 ) -> int:
     months = enumerate_months(start_date, end_date)
-    print(f"Building ERA5 SST climatology {start_date}..{end_date} ({len(months)} months)")
-    print(f"  Output: {out_path}")
-    print(f"  Workers: {workers}, smoothing: {smoothing_window}-day rolling mean")
-    print()
+    # Checkpoint lives next to the final output so cleanup is obvious.
+    checkpoint_path = out_path.with_suffix(".checkpoint.npz")
 
-    sum_grid = np.zeros((DOY_LEAP, *GRID_SHAPE), dtype=np.float64)
-    count_grid = np.zeros((DOY_LEAP, *GRID_SHAPE), dtype=np.int32)
+    # Float32 sum + int16 count keeps the accumulator under 2.3 GB total.
+    # Each pixel-DOY accumulates ≤30 samples, well within float32 precision
+    # for SST values (1e-6°C error in the sum / 30 = trivial vs ~1°C climate
+    # signal); int16 max 32767 is plenty for the count.
+    loaded = load_checkpoint(checkpoint_path)
+    if loaded is not None:
+        sum_grid, count_grid, completed = loaded
+        print(
+            f"Resuming from {checkpoint_path}: "
+            f"{len(completed)} months already accumulated"
+        )
+    else:
+        sum_grid = np.zeros((DOY_LEAP, *GRID_SHAPE), dtype=np.float32)
+        count_grid = np.zeros((DOY_LEAP, *GRID_SHAPE), dtype=np.int16)
+        completed = set()
+
+    remaining = [ym for ym in months if ym not in completed]
+    print(f"Building ERA5 SST climatology {start_date}..{end_date} ({len(months)} months)")
+    print(f"  Output:     {out_path}")
+    print(f"  Checkpoint: {checkpoint_path} (saved every {checkpoint_every} mo)")
+    print(f"  Workers:    {workers}, smoothing: {smoothing_window}-day rolling mean")
+    print(f"  To do:      {len(remaining)} months ({len(completed)} already cached)")
+    print()
 
     started = time.time()
     failed: list[tuple[int, int]] = []
-    n_days_processed = 0
+    n_done_this_run = 0
+    last_checkpoint_at = len(completed)
 
     def task(ym: tuple[int, int]):
         return ym, fetch_month(*ym)
 
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = {pool.submit(task, ym): ym for ym in months}
-        for i, fut in enumerate(as_completed(futures), 1):
-            ym = futures[fut]
-            try:
-                _, ds = fut.result()
-            except Exception as e:  # noqa: BLE001 — surface CDS errors with context
-                failed.append(ym)
-                print(f"  ❌ {ym[0]}-{ym[1]:02} fetch failed: {type(e).__name__}: {e}")
-                continue
-            try:
-                added = accumulate_month(ds, sum_grid, count_grid)
-                n_days_processed += added
-            finally:
-                ds.close()
-            elapsed = time.time() - started
-            rate = i / max(elapsed, 1)
-            eta = (len(months) - i) / max(rate, 0.001)
-            print(
-                f"[{i}/{len(months)}] {ym[0]}-{ym[1]:02} +{added}d "
-                f"(total {n_days_processed}d, {rate*60:.1f} mo/min, ETA {eta/60:.1f}m)"
-            )
+    if remaining:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {pool.submit(task, ym): ym for ym in remaining}
+            for i, fut in enumerate(as_completed(futures), 1):
+                ym = futures[fut]
+                try:
+                    _, ds = fut.result()
+                except Exception as e:  # noqa: BLE001 — surface CDS errors with context
+                    failed.append(ym)
+                    print(f"  ❌ {ym[0]}-{ym[1]:02} fetch failed: {type(e).__name__}: {e}")
+                    continue
+                try:
+                    added = accumulate_month(ds, sum_grid, count_grid)
+                    n_done_this_run += added
+                finally:
+                    ds.close()
+                completed.add(ym)
+                elapsed = time.time() - started
+                rate = i / max(elapsed, 1)
+                eta = (len(remaining) - i) / max(rate, 0.001)
+                total_done = len(completed)
+                print(
+                    f"[{total_done}/{len(months)}] {ym[0]}-{ym[1]:02} +{added}d "
+                    f"(this run {n_done_this_run}d, {rate*60:.1f} mo/min, "
+                    f"ETA {eta/60:.1f}m)"
+                )
+                if len(completed) - last_checkpoint_at >= checkpoint_every:
+                    save_checkpoint(checkpoint_path, sum_grid, count_grid, completed)
+                    last_checkpoint_at = len(completed)
+                    print(f"  💾 checkpoint saved ({len(completed)} months)")
+
+    # Always save a final checkpoint before processing so a mid-write crash
+    # leaves the latest accumulator on disk.
+    if completed:
+        save_checkpoint(checkpoint_path, sum_grid, count_grid, completed)
 
     if failed:
         print()
@@ -335,6 +402,11 @@ def build(
     save_climatology(out_path, clim_smoothed, start_date, end_date, smoothing_window)
     size_mb = out_path.stat().st_size / (1024 * 1024)
     print(f"✓ Wrote {out_path} ({size_mb:.1f} MB)")
+
+    # Clean up the checkpoint — the climatology file is the durable artifact now.
+    if checkpoint_path.exists():
+        checkpoint_path.unlink()
+        print(f"  (removed {checkpoint_path})")
     return 0
 
 
@@ -367,6 +439,13 @@ def main(argv: list[str] | None = None) -> int:
         default=7,
         help="Odd window size for the DOY rolling mean (7 ≈ OISST's weekly aggregate)",
     )
+    parser.add_argument(
+        "--checkpoint-every",
+        type=int,
+        default=12,
+        help="Flush the accumulator to disk every N processed months so a "
+             "crash mid-run doesn't lose hours of CDS work. Set 0 to disable.",
+    )
     args = parser.parse_args(argv)
 
     if args.end < args.start:
@@ -379,6 +458,7 @@ def main(argv: list[str] | None = None) -> int:
         out_path=args.out,
         workers=args.workers,
         smoothing_window=args.smoothing_window,
+        checkpoint_every=args.checkpoint_every if args.checkpoint_every > 0 else 10**9,
     )
 
 
