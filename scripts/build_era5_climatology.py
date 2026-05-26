@@ -69,18 +69,35 @@ GRID_SHAPE = (720, 1440)
 DOY_LEAP = 366
 
 
-def fetch_chunk_aws(year: int, months: list[int]) -> "xr.Dataset":
-    """Fetch one (year, [months]) chunk of ERA5 SST from the NSF NCAR AWS mirror.
+# Per-variable mapping into the NCAR mirror's path/name scheme. The number
+# segment is the ECMWF parameter table id (128_034 = sea_surface_temperature
+# in Kelvin; 128_167 = 2m temperature in Kelvin). The trailing token is the
+# short name we'll see on the NetCDF variable.
+_NCAR_VAR_INFO: dict[str, tuple[str, str]] = {
+    "sst": ("128_034_sstk", "SSTK"),
+    "t2m": ("128_167_2t", "VAR_2T"),
+}
 
-    The NCAR mirror (``s3://nsf-ncar-era5``, us-west-2, unsigned) hosts the full
-    ERA5 archive back to 1940 as hourly NetCDF. SST lives at
-    ``e5.oper.an.sfc/{YYYYMM}/e5.oper.an.sfc.128_034_sstk.ll025sc.{YYYYMMDD}00_{YYYYMMDDDD}23.nc``.
-    Each file is ~700 MB compressed, 744 time steps × 721 lat × 1440 lon × float32.
 
-    We compute the UTC daily mean inline (24 hourly steps → 1 per day) to match
-    the CDS ``daily_statistics`` shape this script's accumulator expects, then
-    resample to the OISST 720×1440 grid. Returns a Dataset with variable
-    ``sst`` (Kelvin), dim ``valid_time``.
+def fetch_chunk_aws(
+    year: int,
+    months: list[int],
+    variable: str = "sst",
+) -> "xr.Dataset":
+    """Fetch one (year, [months]) chunk of an ERA5 surface variable from
+    the NSF NCAR AWS mirror.
+
+    The NCAR mirror (``s3://nsf-ncar-era5``, us-west-2, unsigned) hosts the
+    full ERA5 archive back to 1940 as hourly NetCDF. Files live under
+    ``e5.oper.an.sfc/{YYYYMM}/e5.oper.an.sfc.{varcode}.ll025sc.{YYYYMMDD}00_{YYYYMMDDDD}23.nc``.
+    SST is ~700 MB/month compressed; t2m is ~1.1 GB (no NaN over land).
+
+    We compute the UTC daily mean inline (24 hourly steps → 1 per day) to
+    match the CDS ``daily_statistics`` shape this script's accumulator
+    expects, then resample to the OISST 720×1440 grid. Returns a Dataset
+    with variable ``sst`` (Kelvin), dim ``valid_time`` — the in-memory
+    variable name is always ``sst`` so the rest of the pipeline doesn't
+    branch on the source variable.
 
     This path bypasses CDS entirely — no queue, no throttle, just S3 GETs.
     """
@@ -88,6 +105,10 @@ def fetch_chunk_aws(year: int, months: list[int]) -> "xr.Dataset":
     import xarray as xr
     from botocore import UNSIGNED
     from botocore.client import Config
+
+    if variable not in _NCAR_VAR_INFO:
+        raise ValueError(f"variable must be one of {list(_NCAR_VAR_INFO)}, got {variable!r}")
+    varcode, nc_var = _NCAR_VAR_INFO[variable]
 
     s3 = boto3.client(
         "s3", region_name="us-west-2", config=Config(signature_version=UNSIGNED)
@@ -104,23 +125,22 @@ def fetch_chunk_aws(year: int, months: list[int]) -> "xr.Dataset":
             n_days = calendar.monthrange(year, m)[1]
             key = (
                 f"e5.oper.an.sfc/{year:04}{m:02}/"
-                f"e5.oper.an.sfc.128_034_sstk.ll025sc."
+                f"e5.oper.an.sfc.{varcode}.ll025sc."
                 f"{year:04}{m:02}0100_{year:04}{m:02}{n_days:02}23.nc"
             )
             local = tmpdir / f"{year:04}{m:02}.nc"
             s3.download_file("nsf-ncar-era5", key, str(local))
 
             with xr.open_dataset(local) as ds:
-                # SSTK: (time, latitude, longitude) in Kelvin, NaN over land.
-                daily = ds["SSTK"].groupby("time.date").mean("time")
-                # daily.coords['date'] is python date objects after groupby.
+                # (time, latitude, longitude) in Kelvin. SST is NaN over land;
+                # t2m is defined everywhere (land+sea+ice).
+                daily = ds[nc_var].groupby("time.date").mean("time")
                 for d, arr in zip(daily["date"].values, daily.values, strict=True):
                     daily_arrays.append(np.asarray(arr, dtype=np.float32))
                     daily_times.append(np.datetime64(str(d)))
                 if lat_coord is None:
                     lat_coord = ds["latitude"].values
                     lon_coord = ds["longitude"].values
-            # Free disk per-month to keep peak under ~1 GB.
             local.unlink()
 
     stacked = np.stack(daily_arrays, axis=0)
@@ -310,20 +330,33 @@ def _as_date(np_dt) -> datetime.date:
     return datetime.date(ts.year, ts.month, ts.day)
 
 
+_VAR_LONG_NAME = {
+    "sst": "sea-surface temperature",
+    "t2m": "2 m air temperature",
+}
+
+
 def save_climatology(
     path: Path,
     clim: np.ndarray,
     start: datetime.date,
     end: datetime.date,
     smoothing_window: int,
+    variable: str = "sst",
 ) -> None:
-    """Write the climatology to NetCDF with zlib compression."""
+    """Write the climatology to NetCDF with zlib compression.
+
+    The output variable is always named ``{variable}_climatology`` so
+    downstream consumers (sources/era5.py) can branch on it without parsing
+    attributes.
+    """
     import xarray as xr
 
     # Reuse the canonical OISST cell centers as coords (same grid as
     # everything else in the project).
     lats = np.arange(-89.875, 90.0, 0.25)
     lons = np.arange(0.125, 360.0, 0.25)
+    var_name = f"{variable}_climatology"
 
     da = xr.DataArray(
         clim.astype(np.float32),
@@ -334,7 +367,7 @@ def save_climatology(
             "longitude": lons.astype(np.float32),
         },
         attrs={
-            "long_name": "ERA5 sea-surface temperature climatology (daily mean)",
+            "long_name": f"ERA5 {_VAR_LONG_NAME[variable]} climatology (daily mean)",
             "units": "degC",
             "baseline_start": start.isoformat(),
             "baseline_end": end.isoformat(),
@@ -348,11 +381,11 @@ def save_climatology(
                 "1971-1978 uses ERA5 back-extension."
             ),
         },
-        name="sst_climatology",
+        name=var_name,
     )
     path.parent.mkdir(parents=True, exist_ok=True)
     encoding: dict[Any, dict[str, Any]] = {
-        "sst_climatology": {
+        var_name: {
             "zlib": True,
             "complevel": 4,
             "dtype": "float32",
@@ -369,8 +402,18 @@ def build(
     smoothing_window: int,
     checkpoint_every: int = 1,
     source: str = "aws",
+    variable: str = "sst",
 ) -> int:
-    fetcher = fetch_chunk_aws if source == "aws" else fetch_chunk
+    if source == "aws":
+        def fetcher(year: int, months: list[int]) -> "xr.Dataset":
+            return fetch_chunk_aws(year, months, variable=variable)
+    else:
+        if variable != "sst":
+            raise ValueError(
+                f"--source cds only supports --variable sst (got {variable!r}); "
+                "use --source aws for t2m"
+            )
+        fetcher = fetch_chunk
     years = enumerate_years(start_date, end_date)
     # Checkpoint lives next to the final output so cleanup is obvious.
     checkpoint_path = out_path.with_suffix(".checkpoint.npz")
@@ -476,7 +519,7 @@ def build(
     clim_smoothed = smooth_doy(clim, smoothing_window)
 
     print(f"Writing {out_path}")
-    save_climatology(out_path, clim_smoothed, start_date, end_date, smoothing_window)
+    save_climatology(out_path, clim_smoothed, start_date, end_date, smoothing_window, variable=variable)
     size_mb = out_path.stat().st_size / (1024 * 1024)
     print(f"✓ Wrote {out_path} ({size_mb:.1f} MB)")
 
@@ -529,7 +572,15 @@ def main(argv: list[str] | None = None) -> int:
         default="aws",
         help="Where to fetch raw ERA5 from. 'aws' = NSF NCAR S3 mirror "
              "(s3://nsf-ncar-era5, unsigned, no queue — preferred); "
-             "'cds' = Copernicus CDS API (subject to throttling).",
+             "'cds' = Copernicus CDS API (subject to throttling, sst only).",
+    )
+    parser.add_argument(
+        "--variable",
+        choices=("sst", "t2m"),
+        default="sst",
+        help="Which ERA5 surface variable to climatology. 'sst' is sea-surface "
+             "temperature; 't2m' is 2 m air temperature. Output is written as "
+             "{variable}_climatology in the NetCDF.",
     )
     args = parser.parse_args(argv)
 
@@ -545,6 +596,7 @@ def main(argv: list[str] | None = None) -> int:
         smoothing_window=args.smoothing_window,
         checkpoint_every=args.checkpoint_every if args.checkpoint_every > 0 else 10**9,
         source=args.source,
+        variable=args.variable,
     )
 
 
