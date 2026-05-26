@@ -87,34 +87,54 @@ _ERA5_SST_ANOM_CMAP: list[list[Any]] = [
     [7,    "#470000"],
 ]
 
+# 2 m air-temperature anomaly cmap. Wider range than SST because land has
+# much larger day-to-day variability: heat waves push +10°C, cold snaps
+# −15°C; extreme weather events can hit ±20°C. Same diverging structure as
+# SST anom so the colors still read intuitively.
+_ERA5_T2M_ANOM_CMAP: list[list[Any]] = [
+    [-15, "darkblue"],
+    [-4,  "lightblue"],
+    [0,   "white"],
+    [4,   "yellow"],
+    [10,  "red"],
+    [15,  "darkred"],
+    [20,  "#470000"],
+]
 
-# Filename for the daily SST climatology built by
-# scripts/build_era5_climatology.py. Lives under ./era5-archive/climatology/
-# locally; CI fetches the same file from S3 before the ERA5 step.
-CLIMATOLOGY_FILENAME = "era5-climatology-1971-2000.nc"
+
+# Filenames for the daily climatologies built by
+# scripts/build_era5_climatology.py. One per variable, both live under
+# ./era5-archive/climatology/ locally; CI fetches the same files from S3
+# before the ERA5 step.
+CLIMATOLOGY_FILENAMES: dict[str, str] = {
+    "sst": "era5-climatology-1971-2000.nc",
+    "t2m": "era5-t2m-climatology-1971-2000.nc",
+}
 
 
-@functools.lru_cache(maxsize=1)
-def _load_climatology(path_str: str) -> np.ndarray:
-    """Open the SST climatology NetCDF and return its data as a NumPy array.
+@functools.lru_cache(maxsize=2)
+def _load_climatology(path_str: str, var_name: str) -> np.ndarray:
+    """Open a climatology NetCDF and return its data as a NumPy array.
 
-    Cached per-process: aggregate_archive.py spawns many worker processes,
-    each of which loads the climatology exactly once and reuses it across
-    every aggregated NetCDF. ~100MB resident per worker.
+    Cached per-process — aggregate_archive.py spawns many worker processes,
+    each loads each climatology once and reuses it across every aggregated
+    NetCDF. ~140 MB resident per (worker × climatology).
 
-    Returns shape (366, 720, 1440) float32 in °C, with NaN over land.
+    Returns shape (366, 720, 1440) float32 in °C. SST climatology has NaN
+    over land; t2m is defined everywhere.
     """
     import xarray as xr
 
     p = Path(path_str)
     if not p.exists():
         raise FileNotFoundError(
-            f"ERA5 climatology not found at {p}. Run "
-            f"scripts/build_era5_climatology.py to build it, or download "
-            f"from s3://climate-change-assets/sea-surface-temp/climatology/{CLIMATOLOGY_FILENAME}."
+            f"ERA5 {var_name} climatology not found at {p}. Run "
+            f"scripts/build_era5_climatology.py --variable {var_name} to "
+            f"build it, or download from "
+            f"s3://climate-change-assets/sea-surface-temp/climatology/{p.name}."
         )
     with xr.open_dataset(p) as ds:
-        return np.asarray(ds["sst_climatology"].values, dtype=np.float32)
+        return np.asarray(ds[f"{var_name}_climatology"].values, dtype=np.float32)
 
 
 def _leap_year_doy(date: datetime.date) -> int:
@@ -254,10 +274,21 @@ class Era5Source(DataSource):
             equirect_basename="era5-sst-anom",
             map_basename="era5-sst-anom",
         ),
+        "t2m_anom": DatasetSpec(
+            id="t2m_anom",
+            cmap_def=_ERA5_T2M_ANOM_CMAP,
+            title_template="{date}\nERA5 2 m Air Temp Anomaly vs 1971–2000 Mean, °C",
+            equirect_basename="era5-t2m-anom",
+            map_basename="era5-t2m-anom",
+        ),
     }
 
     archive_root = Path("./era5-archive")
-    climatology_path = archive_root / "climatology" / CLIMATOLOGY_FILENAME
+    climatology_dir = archive_root / "climatology"
+
+    @classmethod
+    def climatology_path_for(cls, variable: str) -> Path:
+        return cls.climatology_dir / CLIMATOLOGY_FILENAMES[variable]
 
     @staticmethod
     def date_from_filename(path: Path) -> tuple[int, int, int] | None:
@@ -316,6 +347,11 @@ class Era5Source(DataSource):
         lon_2d, lat_2d = np.meshgrid(lon_1d, lat_1d)
         return lat_2d, lon_2d
 
+    # Map derived anomaly datasets to (raw NetCDF var, climatology variable).
+    # sst_anom = raw sst minus sst climatology; t2m_anom = raw t2m minus
+    # t2m climatology.
+    _ANOM_PARENT: dict[str, str] = {"sst_anom": "sst", "t2m_anom": "t2m"}
+
     def get_data_array(
         self,
         raw: "xr.Dataset",
@@ -328,22 +364,23 @@ class Era5Source(DataSource):
         proper mask matching OISST's masked-array convention so
         :func:`regions.aggregate` can treat the two sources interchangeably.
 
-        For ``sst_anom``: returns (raw_sst − climatology[doy]) using the same
-        DOY-indexing convention as the climatology builder (leap-year calendar:
-        Mar 1 always at DOY 61; Feb 29 at DOY 60 from leap years only).
+        For ``sst_anom`` / ``t2m_anom``: returns (raw − climatology[doy])
+        using the same DOY-indexing convention as the climatology builder
+        (leap-year calendar: Mar 1 always at DOY 61; Feb 29 at DOY 60 from
+        leap years only).
         """
-        # Raw variable name in the NetCDF (sst_anom is derived, not stored).
-        var_name = "sst" if dataset_id == "sst_anom" else dataset_id
+        parent = self._ANOM_PARENT.get(dataset_id)
+        var_name = parent if parent is not None else dataset_id
         var = raw[var_name]
         # Drop singleton time/number dims, keep (lat, lon).
         arr_k = np.asarray(var.squeeze().values, dtype=np.float32)
         arr_c = arr_k - 273.15
 
-        if dataset_id == "sst_anom":
+        if parent is not None:
             tdim = "valid_time" if "valid_time" in raw.dims else "time"
             ts = np.datetime64(raw[tdim].values.flat[0], "D").astype("O")
             doy = _leap_year_doy(datetime.date(ts.year, ts.month, ts.day))
-            clim = _load_climatology(str(self.climatology_path))
+            clim = _load_climatology(str(self.climatology_path_for(parent)), parent)
             arr_c = arr_c - clim[doy - 1]
 
         return np.ma.masked_invalid(arr_c)
