@@ -53,6 +53,19 @@ jobs:
     # caches resampled NetCDFs under era5-archive/ but that directory is
     # ephemeral on GH Actions (not committed) — fine, the cache.json values
     # persist across runs and the texture WebPs go to S3.
+    # Download the prebuilt ERA5 1971-2000 SST climatology that
+    # sources/era5.py uses to compute sst_anom. Built once by
+    # scripts/build_era5_climatology.py and stored on S3. ~150 MB.
+    - name: Download ERA5 climatology
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      run: |
+        mkdir -p ./era5-archive/climatology
+        aws s3 cp \
+          s3://climate-change-assets/sea-surface-temp/climatology/era5-climatology-1971-2000.nc \
+          ./era5-archive/climatology/era5-climatology-1971-2000.nc
+
     - name: Generate ERA5 textures
       env:
         CDS_API_KEY: ${{ secrets.CDS_API_KEY }}
@@ -61,10 +74,11 @@ jobs:
         printf 'url: https://cds.climate.copernicus.eu/api\nkey: %s\n' "$CDS_API_KEY" > ~/.cdsapirc
         chmod 600 ~/.cdsapirc
         # Fetch up to 4 days in parallel — CDS tolerates a handful of
-        # concurrent requests per user. Each day keeps sst→t2m sequential so
-        # t2m hits the local NetCDF cache instead of re-requesting from CDS.
-        # If the sst fetch failed (day not yet published by ERA5T), the cache
-        # file won't exist, so skip t2m to avoid a guaranteed-fail repeat.
+        # concurrent requests per user. Each day keeps sst→t2m→sst_anom
+        # sequential so the later datasets hit the local NetCDF cache instead
+        # of re-requesting from CDS. If the sst fetch failed (day not yet
+        # published by ERA5T), the cache file won't exist, so skip t2m and
+        # sst_anom to avoid guaranteed-fail repeats.
         printf '%s\n' 1 2 3 4 5 6 7 8 9 10 | xargs -I{} -P 4 bash -c '
           days_ago="$1"
           echo "Generating ERA5 textures for $days_ago days ago..."
@@ -72,8 +86,9 @@ jobs:
           target=$(date -u -d "$days_ago days ago" +%Y%m%d)
           if [ -f "era5-archive/${target:0:4}/era5-${target}.nc" ]; then
             uv run pipeline.py --source era5 --mode texture --dataset t2m --days-ago "$days_ago" --out ./maps || true
+            uv run pipeline.py --source era5 --mode texture --dataset sst_anom --days-ago "$days_ago" --out ./maps || true
           else
-            echo "Skipping t2m for $days_ago days ago — no cached NetCDF (sst fetch failed)"
+            echo "Skipping t2m and sst_anom for $days_ago days ago — no cached NetCDF (sst fetch failed)"
           fi
         ' _ {}
         # Gap-fill: any recent date that the texture loop above missed (or
@@ -136,6 +151,8 @@ jobs:
            maps/*-era5-sst-equirect-metadata.json
            maps/*-era5-t2m-equirect.webp
            maps/*-era5-t2m-equirect-metadata.json
+           maps/*-era5-sst-anom-equirect.webp
+           maps/*-era5-sst-anom-equirect-metadata.json
            maps/index.json
                       
     - name: Upload files to S3 and generate index

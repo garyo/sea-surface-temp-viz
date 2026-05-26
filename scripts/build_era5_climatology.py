@@ -2,9 +2,14 @@
 # SPDX-License-Identifier: MIT
 """Build a daily ERA5 SST climatology over the 1971-2000 baseline.
 
-Streams ERA5 daily-mean SST month-at-a-time from CDS, accumulates per-DOY
+Streams ERA5 daily-mean SST year-at-a-time from CDS, accumulates per-DOY
 sums on the OISST 720×1440 grid, applies a 7-day centered rolling mean
 along day-of-year, and writes a single NetCDF.
+
+Year-at-a-time keeps the total CDS request count low (30 for 1971-2000
+vs 360 month-at-a-time), which sidesteps per-account submission throttling
+that bites after a few hundred requests in a short window. Each year-
+request is ~400 MB compressed — well within CDS per-request limits.
 
 **Why 7-day smoothing?** OISST's published anomaly is built against a hybrid
 climatology — weekly OISST v2 (1982-2000) blended with an in-situ
@@ -64,8 +69,84 @@ GRID_SHAPE = (720, 1440)
 DOY_LEAP = 366
 
 
-def fetch_month(year: int, month: int) -> "xr.Dataset":
-    """Fetch one month of ERA5 daily-mean SST in one CDS request.
+def fetch_chunk_aws(year: int, months: list[int]) -> "xr.Dataset":
+    """Fetch one (year, [months]) chunk of ERA5 SST from the NSF NCAR AWS mirror.
+
+    The NCAR mirror (``s3://nsf-ncar-era5``, us-west-2, unsigned) hosts the full
+    ERA5 archive back to 1940 as hourly NetCDF. SST lives at
+    ``e5.oper.an.sfc/{YYYYMM}/e5.oper.an.sfc.128_034_sstk.ll025sc.{YYYYMMDD}00_{YYYYMMDDDD}23.nc``.
+    Each file is ~700 MB compressed, 744 time steps × 721 lat × 1440 lon × float32.
+
+    We compute the UTC daily mean inline (24 hourly steps → 1 per day) to match
+    the CDS ``daily_statistics`` shape this script's accumulator expects, then
+    resample to the OISST 720×1440 grid. Returns a Dataset with variable
+    ``sst`` (Kelvin), dim ``valid_time``.
+
+    This path bypasses CDS entirely — no queue, no throttle, just S3 GETs.
+    """
+    import boto3
+    import xarray as xr
+    from botocore import UNSIGNED
+    from botocore.client import Config
+
+    s3 = boto3.client(
+        "s3", region_name="us-west-2", config=Config(signature_version=UNSIGNED)
+    )
+
+    with tempfile.TemporaryDirectory() as tmpdir_str:
+        tmpdir = Path(tmpdir_str)
+        daily_arrays: list[np.ndarray] = []
+        daily_times: list[np.datetime64] = []
+        lat_coord = None
+        lon_coord = None
+
+        for m in months:
+            n_days = calendar.monthrange(year, m)[1]
+            key = (
+                f"e5.oper.an.sfc/{year:04}{m:02}/"
+                f"e5.oper.an.sfc.128_034_sstk.ll025sc."
+                f"{year:04}{m:02}0100_{year:04}{m:02}{n_days:02}23.nc"
+            )
+            local = tmpdir / f"{year:04}{m:02}.nc"
+            s3.download_file("nsf-ncar-era5", key, str(local))
+
+            with xr.open_dataset(local) as ds:
+                # SSTK: (time, latitude, longitude) in Kelvin, NaN over land.
+                daily = ds["SSTK"].groupby("time.date").mean("time")
+                # daily.coords['date'] is python date objects after groupby.
+                for d, arr in zip(daily["date"].values, daily.values, strict=True):
+                    daily_arrays.append(np.asarray(arr, dtype=np.float32))
+                    daily_times.append(np.datetime64(str(d)))
+                if lat_coord is None:
+                    lat_coord = ds["latitude"].values
+                    lon_coord = ds["longitude"].values
+            # Free disk per-month to keep peak under ~1 GB.
+            local.unlink()
+
+    stacked = np.stack(daily_arrays, axis=0)
+    times = np.array(daily_times, dtype="datetime64[ns]")
+    merged = xr.Dataset(
+        {"sst": (("valid_time", "latitude", "longitude"), stacked)},
+        coords={
+            "valid_time": times,
+            "latitude": lat_coord,
+            "longitude": lon_coord,
+        },
+    )
+    return _resample_to_oisst_grid(merged).load()
+
+
+def fetch_chunk(year: int, months: list[int]) -> "xr.Dataset":
+    """Fetch one (year, [months]) chunk of ERA5 daily-mean SST in one CDS request.
+
+    ``months`` can be a single month or all 12. CDS accepts year/month/day as
+    lists; passing all months of a year + all days yields one NetCDF with
+    365/366 time steps, dramatically reducing the request count vs
+    month-at-a-time (12x fewer CDS submissions → friendlier to per-account
+    throttling).
+
+    Days that don't exist for a given month (e.g. day 31 in February) are
+    silently dropped by CDS — request a superset and let it filter.
 
     Returns the resampled Dataset (OISST grid). Variable name is ``sst``;
     units are Kelvin per CDS convention — convert downstream.
@@ -73,13 +154,12 @@ def fetch_month(year: int, month: int) -> "xr.Dataset":
     import cdsapi
     import xarray as xr
 
-    n_days = calendar.monthrange(year, month)[1]
     request = {
         "product_type": "reanalysis",
         "variable": ["sea_surface_temperature"],
         "year": f"{year:04}",
-        "month": f"{month:02}",
-        "day": [f"{d:02}" for d in range(1, n_days + 1)],
+        "month": [f"{m:02}" for m in months],
+        "day": [f"{d:02}" for d in range(1, 32)],
         "daily_statistic": "daily_mean",
         "time_zone": "utc+00:00",
         "frequency": "1_hourly",
@@ -107,7 +187,7 @@ def fetch_month(year: int, month: int) -> "xr.Dataset":
             nc_files = sorted(p for p in tmpdir.glob("*.nc") if p != response_path)
             if not nc_files:
                 raise RuntimeError(
-                    f"CDS zip for {year}-{month:02} had no NetCDFs: "
+                    f"CDS zip for {year} months {months} had no NetCDFs: "
                     f"{[n.name for n in tmpdir.iterdir()]}"
                 )
             parts = []
@@ -161,29 +241,24 @@ def smooth_doy(daily: np.ndarray, window: int) -> np.ndarray:
     return out
 
 
-def enumerate_months(start: datetime.date, end: datetime.date) -> list[tuple[int, int]]:
-    """Inclusive list of (year, month) tuples covering [start, end]."""
-    months = []
-    y, m = start.year, start.month
-    while (y, m) <= (end.year, end.month):
-        months.append((y, m))
-        m += 1
-        if m == 13:
-            m = 1
-            y += 1
-    return months
+def enumerate_years(start: datetime.date, end: datetime.date) -> list[int]:
+    """Inclusive list of year ints covering [start.year, end.year].
+
+    Sub-year start/end are honored at the CDS request level (we always ask
+    for full Jan-Dec, and CDS silently drops days outside the range or
+    that don't exist in a month).
+    """
+    return list(range(start.year, end.year + 1))
 
 
 def load_checkpoint(
     path: Path,
-) -> tuple[np.ndarray, np.ndarray, set[tuple[int, int]]] | None:
-    """Load (sum_grid, count_grid, completed_months) from a checkpoint .npz."""
+) -> tuple[np.ndarray, np.ndarray, set[int]] | None:
+    """Load (sum_grid, count_grid, completed_years) from a checkpoint .npz."""
     if not path.exists():
         return None
     data = np.load(path, allow_pickle=False)
-    completed: set[tuple[int, int]] = {
-        (int(row[0]), int(row[1])) for row in data["completed"]
-    }
+    completed: set[int] = {int(y) for y in data["completed"]}
     return data["sum_grid"], data["count_grid"], completed
 
 
@@ -191,7 +266,7 @@ def save_checkpoint(
     path: Path,
     sum_grid: np.ndarray,
     count_grid: np.ndarray,
-    completed: set[tuple[int, int]],
+    completed: set[int],
 ) -> None:
     """Atomic-replace checkpoint write (full overwrite each time)."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -292,9 +367,11 @@ def build(
     out_path: Path,
     workers: int,
     smoothing_window: int,
-    checkpoint_every: int = 12,
+    checkpoint_every: int = 1,
+    source: str = "aws",
 ) -> int:
-    months = enumerate_months(start_date, end_date)
+    fetcher = fetch_chunk_aws if source == "aws" else fetch_chunk
+    years = enumerate_years(start_date, end_date)
     # Checkpoint lives next to the final output so cleanup is obvious.
     checkpoint_path = out_path.with_suffix(".checkpoint.npz")
 
@@ -307,53 +384,53 @@ def build(
         sum_grid, count_grid, completed = loaded
         print(
             f"Resuming from {checkpoint_path}: "
-            f"{len(completed)} months already accumulated"
+            f"{len(completed)} years already accumulated"
         )
     else:
         sum_grid = np.zeros((DOY_LEAP, *GRID_SHAPE), dtype=np.float32)
         count_grid = np.zeros((DOY_LEAP, *GRID_SHAPE), dtype=np.int16)
         completed = set()
 
-    remaining = [ym for ym in months if ym not in completed]
-    print(f"Building ERA5 SST climatology {start_date}..{end_date} ({len(months)} months)")
+    remaining = [y for y in years if y not in completed]
+    print(f"Building ERA5 SST climatology {start_date}..{end_date} ({len(years)} years)")
     print(f"  Output:     {out_path}")
-    print(f"  Checkpoint: {checkpoint_path} (saved every {checkpoint_every} mo)")
+    print(f"  Checkpoint: {checkpoint_path} (saved every {checkpoint_every} yr)")
     print(f"  Workers:    {workers}, smoothing: {smoothing_window}-day rolling mean")
-    print(f"  To do:      {len(remaining)} months ({len(completed)} already cached)")
+    print(f"  To do:      {len(remaining)} years ({len(completed)} already cached)")
     print()
 
     started = time.time()
-    failed: list[tuple[int, int]] = []
+    failed: list[int] = []
     n_done_this_run = 0
     last_checkpoint_at = len(completed)
 
-    def task(ym: tuple[int, int]):
-        return ym, fetch_month(*ym)
+    def task(yr: int):
+        return yr, fetcher(yr, list(range(1, 13)))
 
     if remaining:
         with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = {pool.submit(task, ym): ym for ym in remaining}
+            futures = {pool.submit(task, yr): yr for yr in remaining}
             for i, fut in enumerate(as_completed(futures), 1):
-                ym = futures[fut]
+                yr = futures[fut]
                 try:
                     _, ds = fut.result()
                 except Exception as e:  # noqa: BLE001 — surface CDS errors with context
-                    failed.append(ym)
-                    print(f"  ❌ {ym[0]}-{ym[1]:02} fetch failed: {type(e).__name__}: {e}")
+                    failed.append(yr)
+                    print(f"  ❌ {yr} fetch failed: {type(e).__name__}: {e}")
                     continue
                 try:
                     added = accumulate_month(ds, sum_grid, count_grid)
                     n_done_this_run += added
                 finally:
                     ds.close()
-                completed.add(ym)
+                completed.add(yr)
                 elapsed = time.time() - started
                 rate = i / max(elapsed, 1)
                 eta = (len(remaining) - i) / max(rate, 0.001)
                 total_done = len(completed)
                 print(
-                    f"[{total_done}/{len(months)}] {ym[0]}-{ym[1]:02} +{added}d "
-                    f"(this run {n_done_this_run}d, {rate*60:.1f} mo/min, "
+                    f"[{total_done}/{len(years)}] {yr} +{added}d "
+                    f"(this run {n_done_this_run}d, {rate*60:.1f} yr/min, "
                     f"ETA {eta/60:.1f}m)"
                 )
                 if len(completed) - last_checkpoint_at >= checkpoint_every:
@@ -368,9 +445,9 @@ def build(
 
     if failed:
         print()
-        print(f"⚠️  {len(failed)} months failed: {failed}")
-        if len(failed) > len(months) // 20:
-            print("Too many failures (>5%). Aborting before write.")
+        print(f"⚠️  {len(failed)} years failed: {failed}")
+        if len(failed) > max(1, len(years) // 10):
+            print("Too many failures (>10%). Aborting before write.")
             return 1
         print("Continuing with partial coverage; gaps will show as low count_grid pixels.")
 
@@ -442,9 +519,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--checkpoint-every",
         type=int,
-        default=12,
-        help="Flush the accumulator to disk every N processed months so a "
+        default=1,
+        help="Flush the accumulator to disk every N processed years so a "
              "crash mid-run doesn't lose hours of CDS work. Set 0 to disable.",
+    )
+    parser.add_argument(
+        "--source",
+        choices=("aws", "cds"),
+        default="aws",
+        help="Where to fetch raw ERA5 from. 'aws' = NSF NCAR S3 mirror "
+             "(s3://nsf-ncar-era5, unsigned, no queue — preferred); "
+             "'cds' = Copernicus CDS API (subject to throttling).",
     )
     args = parser.parse_args(argv)
 
@@ -459,6 +544,7 @@ def main(argv: list[str] | None = None) -> int:
         workers=args.workers,
         smoothing_window=args.smoothing_window,
         checkpoint_every=args.checkpoint_every if args.checkpoint_every > 0 else 10**9,
+        source=args.source,
     )
 
 

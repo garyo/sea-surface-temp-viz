@@ -39,8 +39,10 @@ from typing import Any
 
 import regions
 
-# Matches keys like 1982-01-01-oisst-sst-nino_3_4
-KEY_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})-([a-z0-9]+)-([a-z0-9]+)-([a-z0-9_]+)$")
+# Matches keys like 1982-01-01-oisst-sst-nino_3_4 or 2026-01-15-era5-sst_anom-n_hemi.
+# Dataset and region can both contain underscores; source cannot (so the
+# greedy match for source still stops at the first `-`).
+KEY_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})-([a-z0-9]+)-([a-z0-9_]+)-([a-z0-9_]+)$")
 
 
 def load_cache(path: Path) -> dict[str, float]:
