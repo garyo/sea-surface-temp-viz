@@ -106,6 +106,21 @@ jobs:
           --end "$(date -u -d '1 day ago' +%Y-%m-%d)" \
           --cache-file ./data-cache.json \
           --workers 4 || true
+        # Texture gap-fill: the day-by-day loop only renders the 1–10 day
+        # window, but the step above just pulled NetCDFs up to 30 days back
+        # (late-published ERA5T). Render textures for the 11–30 day tail
+        # straight from the local archive so no recent date is left without a
+        # globe texture — especially the anomaly variants. The batch script
+        # skips any date with no local NetCDF, so on a healthy run (nothing
+        # late) this renders nothing. --no-skip-existing-on-s3 because the S3
+        # index marks a date present once *any* era5 texture exists, which
+        # would wrongly skip dates whose anomaly texture is still missing; the
+        # S3 upload step still skips byte-identical files.
+        uv run scripts/generate_era5_textures_batch.py \
+          --start "$(date -u -d '30 days ago' +%Y-%m-%d)" \
+          --end "$(date -u -d '11 days ago' +%Y-%m-%d)" \
+          --no-skip-existing-on-s3 \
+          --out ./maps || true
         # The texture step downloaded daily NetCDFs into era5-archive/.
         # Aggregate them into data-cache.json so export_timeseries below picks
         # up today's ERA5 values. (data-cache.json is not committed back from

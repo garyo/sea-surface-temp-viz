@@ -83,6 +83,18 @@ def main(argv: list[str] | None = None) -> int:
         action="store_false",
         help="Regenerate everything regardless of S3 state",
     )
+    parser.add_argument(
+        "--datasets",
+        type=lambda s: [d.strip() for d in s.split(",") if d.strip()],
+        default=None,
+        help="Comma-separated dataset ids to render (e.g. sst_anom,t2m_anom). "
+        "Defaults to all of the source's datasets. Use this to backfill only "
+        "the anomaly variants, which were added after the SST/T2M textures and "
+        "so are missing from the historical back-catalog. NOTE: the S3 index "
+        "marks a date as present once *any* era5 texture exists for it, so "
+        "--skip-existing-on-s3 would skip those dates even though their anomaly "
+        "texture is missing — pair --datasets with --no-skip-existing-on-s3.",
+    )
     args = parser.parse_args(argv)
 
     args.out.mkdir(parents=True, exist_ok=True)
@@ -93,10 +105,15 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Existing on S3 to skip: {len(skip_dates)} dates")
 
     source = Era5Source()
-    cmaps = {
-        ds_id: colormap_for(source.datasets[ds_id])
-        for ds_id in source.datasets
-    }
+    dataset_ids = args.datasets or list(source.datasets)
+    unknown = [d for d in dataset_ids if d not in source.datasets]
+    if unknown:
+        parser.error(
+            f"unknown dataset(s) {unknown}; "
+            f"era5 has {list(source.datasets)}"
+        )
+    print(f"Datasets: {dataset_ids}")
+    cmaps = {ds_id: colormap_for(source.datasets[ds_id]) for ds_id in dataset_ids}
 
     one = datetime.timedelta(days=1)
     dates: list[datetime.date] = []
@@ -123,7 +140,8 @@ def main(argv: list[str] | None = None) -> int:
             continue
         try:
             with source.open_local(nc_path) as raw:
-                for ds_id, spec in source.datasets.items():
+                for ds_id in dataset_ids:
+                    spec = source.datasets[ds_id]
                     data = source.get_data_array(raw, ds_id)
                     cmap, vmin, vmax = cmaps[ds_id]
                     title = spec.title_template.format(date=date_str)

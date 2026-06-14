@@ -284,15 +284,28 @@ def generate_index_from_s3(bucket, s3_prefix, aws_access_key=None, aws_secret_ke
 
     # Find dated equirect textures + time-series region JSONs in S3.
     # OISST uses the legacy unprefixed naming (sst-temp / sst-temp-anomaly);
-    # newer sources are prefixed as <date>-<source>-<dataset>-equirect.webp.
-    oisst_dates: set[str] = set()
-    per_source_dates: dict[str, set[str]] = {}
+    # newer sources are prefixed as <date>-<source>-<dataset>-equirect.webp,
+    # where <dataset> may itself contain hyphens (sst, t2m, sst-anom, t2m-anom).
+    # We track dates per (source, dataset) so the frontend can tell that, e.g.,
+    # an SST date exists but its anomaly texture doesn't yet (anomaly variants
+    # lag, and the historical back-catalog was backfilled separately).
+    per_source_dataset_dates: dict[str, dict[str, set[str]]] = {}
     timeseries_regions: set[str] = set()
 
-    oisst_re = re.compile(r"(\d{4}-\d{2}-\d{2})-sst-temp-equirect\.webp$")
-    prefixed_re = re.compile(
-        r"(\d{4}-\d{2}-\d{2})-([a-z0-9]+)-[a-z0-9]+-equirect\.webp$"
+    oisst_sst_re = re.compile(r"(\d{4}-\d{2}-\d{2})-sst-temp-equirect\.webp$")
+    oisst_anom_re = re.compile(
+        r"(\d{4}-\d{2}-\d{2})-sst-temp-anomaly-equirect\.webp$"
     )
+    # Greedy source token is a single segment; the dataset token is everything
+    # up to -equirect, so it captures multi-segment ids like "sst-anom".
+    prefixed_re = re.compile(
+        r"(\d{4}-\d{2}-\d{2})-([a-z0-9]+)-([a-z0-9-]+)-equirect\.webp$"
+    )
+
+    def add_date(source: str, dataset: str, date: str) -> None:
+        per_source_dataset_dates.setdefault(source, {}).setdefault(
+            dataset, set()
+        ).add(date)
 
     for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
         if "Contents" not in page:
@@ -302,34 +315,51 @@ def generate_index_from_s3(bucket, s3_prefix, aws_access_key=None, aws_secret_ke
             key_rel = obj["Key"][len(prefix):] if prefix else obj["Key"]
             filename = key_rel.split("/")[-1]
 
-            m = oisst_re.match(filename)
+            # OISST's legacy filenames must be checked before prefixed_re,
+            # which would otherwise misparse them (source="sst", dataset="temp").
+            m = oisst_sst_re.match(filename)
             if m:
-                oisst_dates.add(m.group(1))
+                add_date("oisst", "sst", m.group(1))
+                continue
+
+            m = oisst_anom_re.match(filename)
+            if m:
+                add_date("oisst", "anom", m.group(1))
                 continue
 
             m = prefixed_re.match(filename)
             if m:
-                per_source_dates.setdefault(m.group(2), set()).add(m.group(1))
+                # Filenames hyphenate the dataset (sst-anom); the frontend's
+                # DatasetId uses underscores (sst_anom), so normalize here.
+                dataset = m.group(3).replace("-", "_")
+                add_date(m.group(2), dataset, m.group(1))
                 continue
 
             ts_match = re.match(r"timeseries/([A-Za-z0-9_]+)\.json$", key_rel)
             if ts_match:
                 timeseries_regions.add(ts_match.group(1))
 
-    # Build per-source date lists. OISST's unprefixed scheme means we attribute
-    # its dated textures explicitly here.
-    if oisst_dates:
-        per_source_dates.setdefault("oisst", set()).update(oisst_dates)
-
+    # Build per-source metadata, each carrying a per-dataset breakdown plus the
+    # source-level union (for back-compat and the date slider's domain).
     sources_meta: dict[str, dict] = {}
     union_dates: set[str] = set()
-    for src, ds in per_source_dates.items():
-        sorted_ds = sorted(ds)
+    for src, ds_map in per_source_dataset_dates.items():
+        datasets_meta: dict[str, dict] = {}
+        src_union: set[str] = set()
+        for ds, dts in ds_map.items():
+            sorted_dts = sorted(dts)
+            datasets_meta[ds] = {
+                "dates": sorted_dts,
+                "latest": sorted_dts[-1] if sorted_dts else None,
+            }
+            src_union.update(dts)
+        sorted_src = sorted(src_union)
         sources_meta[src] = {
-            "dates": sorted_ds,
-            "latest": sorted_ds[-1] if sorted_ds else None,
+            "dates": sorted_src,
+            "latest": sorted_src[-1] if sorted_src else None,
+            "datasets": datasets_meta,
         }
-        union_dates.update(ds)
+        union_dates.update(src_union)
 
     # Top-level dates: union across sources (so the date slider covers every
     # date that *any* source has a texture for; the frontend filters by source
