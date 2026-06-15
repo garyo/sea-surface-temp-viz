@@ -87,18 +87,29 @@ _ERA5_SST_ANOM_CMAP: list[list[Any]] = [
     [7,    "#470000"],
 ]
 
-# 2 m air-temperature anomaly cmap. Wider range than SST because land has
-# much larger day-to-day variability: heat waves push +10°C, cold snaps
-# −15°C; extreme weather events can hit ±20°C. Same diverging structure as
-# SST anom so the colors still read intuitively.
+# 2 m air-temperature anomaly cmap. The daily distribution is sharply peaked
+# near zero — typically ~60% of the globe falls in 0..+4°C and ~90% in ±4°C,
+# with heat-wave/cold-snap tails past ±10°C covering only a percent or two. So
+# rather than spread the gamut evenly over a wide ±15–20°C range (which left
+# the populated band as a single white→yellow step), pack the color anchors
+# into ±4°C for fine detail where the data lives and compress the rare tails.
+# Same white-centered diverging structure as the SST anomaly map.
 _ERA5_T2M_ANOM_CMAP: list[list[Any]] = [
-    [-15, "darkblue"],
-    [-4,  "lightblue"],
-    [0,   "white"],
-    [4,   "yellow"],
-    [10,  "red"],
-    [15,  "darkred"],
-    [20,  "#470000"],
+    [-10,  "darkblue"],
+    [-6,   "#2166ac"],
+    [-3,   "#4393c3"],
+    [-1.5, "lightblue"],
+    [-0.5, "#e2eff9"],
+    [0,    "white"],
+    [0.5,  "#fffac0"],
+    [1.0,  "#fff176"],
+    [2.0,  "#ffe000"],
+    [3.0,  "#ffc107"],
+    [4.0,  "#ff9800"],
+    [6.0,  "#ff5722"],
+    [9.0,  "#e53935"],
+    [13,   "darkred"],
+    [16,   "#470000"],
 ]
 
 
