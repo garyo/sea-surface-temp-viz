@@ -16,12 +16,14 @@ GitHub Actions workflow `.github/workflows/make-images.yml` runs nightly at 13:1
 
 ## Important behaviors that aren't obvious from the code
 
-- **`sst-data-cache.json` is NOT committed back from CI**. Each run starts from main's cache, prunes 90 days, and refetches. The cache in main can lag months behind reality; refresh locally before testing aggregation changes:
+- **`data-cache.json` is persisted to S3, not committed back from CI.** The committed cache is the authority for *historical* dates (curated by deliberate backfill commits) and is frozen well in the past — it can lag months behind reality. *Recent* dates are never committed; instead each CI run restores `s3://climate-change-assets/sea-surface-temp/data-cache.json`, merges it onto the committed one (`scripts/merge_cache.py` — committed wins on shared keys, S3 fills the recent tail), then pushes the result back at the end. This is what makes a successfully-collected recent day durable: before it, recent ERA5 was rebuilt from scratch each run off the ephemeral `era5-archive/`, so any date an upstream outage missed while it sat in the fetch window was lost forever once it aged out (that's how the May–Jun 2026 Niño-3.4 gap became permanent). The daily backfill now retries still-missing dates over a **90-day** window, so a gap self-heals whenever the source republishes. For testing aggregation changes, refresh locally first (the committed cache lags):
 
   ```sh
   uv run prune-cache.py --inplace --days 90
   uv run pipeline.py --source oisst --mode graph --dataset sst --out /tmp/x.png
   ```
+
+  Note `prune-cache.py` defaults to `--sources oisst`, so it only prunes OISST entries; ERA5 entries are kept regardless of age (they're refilled from the S3 cache + backfill, not refetched wholesale each run).
 
 - **Cache key** format: `YYYY-MM-DD-{source}-{dataset}-{region}` → float (cosine-lat-weighted average over the named region). Source is `oisst` or `era5`; dataset is one of the source's exposed names (`sst`/`anom` for OISST, `sst`/`t2m` for ERA5); region is one of `regions.REGIONS`. `pipeline.py` and `scripts/aggregate_archive.py` both write this same shape.
 
