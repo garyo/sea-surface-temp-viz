@@ -33,7 +33,7 @@ import math
 import re
 import sys
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -103,6 +103,48 @@ def build_payload(
     }
 
 
+def report_recent_gaps(
+    grouped: dict[str, dict[str, dict[str, list[tuple[str, float]]]]],
+    days: int,
+) -> int:
+    """Print interior gaps in the recent tail of each region/source/dataset.
+
+    An "interior gap" is a calendar day missing *before* the latest day we have
+    (days after the latest are just not-yet-published, e.g. ERA5T latency, and
+    are expected). Surfacing these in the CI log turns a silent upstream outage
+    into something visible. Returns the total number of (series, missing-day)
+    pairs found.
+    """
+    total = 0
+    for region_id in sorted(grouped):
+        for source_id, datasets in sorted(grouped[region_id].items()):
+            for ds_name, entries in sorted(datasets.items()):
+                if not entries:
+                    continue
+                have = {d for d, _ in entries}
+                latest = date.fromisoformat(max(have))
+                start = latest - timedelta(days=days)
+                missing = [
+                    (start + timedelta(days=i)).isoformat()
+                    for i in range((latest - start).days + 1)
+                    if (start + timedelta(days=i)).isoformat() not in have
+                ]
+                if missing:
+                    total += len(missing)
+                    shown = ", ".join(missing[:8])
+                    more = f" (+{len(missing) - 8} more)" if len(missing) > 8 else ""
+                    print(
+                        f"⚠️  gap: {region_id}/{source_id}/{ds_name} missing "
+                        f"{len(missing)} day(s) in last {days}d: {shown}{more}"
+                    )
+    if total:
+        print(
+            f"⚠️  {total} missing recent day(s) across all series — the daily "
+            f"backfill will retry these until the upstream source republishes."
+        )
+    return total
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -123,6 +165,13 @@ def main(argv: list[str] | None = None) -> int:
         default=365,
         help="Skip regions with fewer than this many dated values "
              "(prevents thin-data uploads before the local backfill is done)",
+    )
+    parser.add_argument(
+        "--gap-report-days",
+        type=int,
+        default=120,
+        help="Report interior missing days within this many days of each "
+             "series' latest date (visibility for upstream outages)",
     )
     args = parser.parse_args(argv)
 
@@ -168,6 +217,7 @@ def main(argv: list[str] | None = None) -> int:
         size_kb = out_path.stat().st_size / 1024
         print(f"✓ {out_path} ({size_kb:.1f} KB; {ds_summary})")
 
+    report_recent_gaps(grouped, args.gap_report_days)
     return 0
 
 

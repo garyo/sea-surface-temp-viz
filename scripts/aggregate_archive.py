@@ -32,6 +32,31 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import regions  # noqa: E402
 from sources import SOURCES  # noqa: E402
 
+# Plausibility bounds for a regional daily-mean value (°C). A corrupt or
+# upstream-flagged NetCDF that still parses (e.g. ECMWF's "should not be used"
+# daily-statistics files) can yield wildly out-of-range means; without this
+# guard those would now be persisted to the S3 cache and shown forever. A whole
+# date is rejected (raised, hence retried on a later run) rather than writing a
+# partial/poisoned entry. Absolute temps span roughly -90..+60 °C; regional
+# anomalies realistically stay well inside ±30 °C.
+_PLAUSIBLE_RANGE = {
+    "abs": (-100.0, 70.0),    # sst, t2m
+    "anom": (-40.0, 40.0),    # sst_anom, t2m_anom
+}
+
+
+def _check_plausible(ds_id: str, region_id: str, val: float) -> None:
+    import math
+
+    if math.isnan(val):
+        return  # masked/empty region — legitimately NaN, handled downstream
+    lo, hi = _PLAUSIBLE_RANGE["anom" if ds_id.endswith("anom") else "abs"]
+    if not (lo <= val <= hi):
+        raise ValueError(
+            f"implausible {ds_id} value {val:.3f}°C for {region_id} "
+            f"(outside [{lo}, {hi}]) — likely corrupt/flagged source file"
+        )
+
 
 def aggregate_one(
     nc_path: Path,
@@ -57,6 +82,7 @@ def aggregate_one(
             data = source.get_data_array(raw, ds_id)
             for region_id in regs:
                 val = regions.aggregate(data, lat_2d, lon_2d, region_id)
+                _check_plausible(ds_id, region_id, val)
                 key = f"{date_str}-{source.id}-{ds_id}-{region_id}"
                 out[key] = val
     return (date_str, out)
