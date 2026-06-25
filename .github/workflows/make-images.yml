@@ -93,6 +93,13 @@ jobs:
         aws s3 cp \
           s3://climate-change-assets/sea-surface-temp/climatology/era5-t2m-climatology-1971-2000.nc \
           ./era5-archive/climatology/era5-t2m-climatology-1971-2000.nc
+        # GFS max/min anomalies use the mean-of-daily-max / -min baselines.
+        aws s3 cp \
+          s3://climate-change-assets/sea-surface-temp/climatology/era5-t2m-max-climatology-1971-2000.nc \
+          ./era5-archive/climatology/era5-t2m-max-climatology-1971-2000.nc
+        aws s3 cp \
+          s3://climate-change-assets/sea-surface-temp/climatology/era5-t2m-min-climatology-1971-2000.nc \
+          ./era5-archive/climatology/era5-t2m-min-climatology-1971-2000.nc
 
     - name: Generate ERA5 textures
       env:
@@ -151,6 +158,22 @@ jobs:
         # up today's ERA5 values. (data-cache.json is not committed back from
         # CI — historical ERA5 entries come from the committed backfill.)
         uv run scripts/aggregate_archive.py --source era5 --workers 2 || true
+
+    # GFS 2 m air-temp textures + cache. Near-real-time (NOAA GFS 00Z cycle),
+    # fills ERA5's ~5-day reporting lag with today + the last week. Fetched
+    # from AWS Open Data (anonymous s3://noaa-gfs-bdp-pds — no creds needed),
+    # ~10-16 MB/day; gfs-archive/ is ephemeral on CI so each run re-fetches the
+    # window (cheap, and self-healing if a day's 00Z run was late). Renders all
+    # six datasets (mean/max/min + anomalies vs the climatologies downloaded
+    # above) and folds region means into data-cache.json for export below.
+    # Recent days are all post-2024, so the 2024-01-01 texture floor needs no
+    # special handling here.
+    - name: Generate GFS textures
+      run: |
+        uv run scripts/backfill_gfs.py \
+          --start "$(date -u -d '7 days ago' +%Y-%m-%d)" \
+          --end "$(date -u +%Y-%m-%d)" \
+          --out ./maps --cache-file ./data-cache.json || true
 
     # Export aggregated time-series JSON for the web frontend (Trends tab).
     # Reads sst-data-cache.json (already up to date from the graph step) and
@@ -215,6 +238,18 @@ jobs:
            maps/*-era5-sst-anom-equirect-metadata.json
            maps/*-era5-t2m-anom-equirect.webp
            maps/*-era5-t2m-anom-equirect-metadata.json
+           maps/*-gfs-t2m-mean-equirect.webp
+           maps/*-gfs-t2m-mean-equirect-metadata.json
+           maps/*-gfs-t2m-max-equirect.webp
+           maps/*-gfs-t2m-max-equirect-metadata.json
+           maps/*-gfs-t2m-min-equirect.webp
+           maps/*-gfs-t2m-min-equirect-metadata.json
+           maps/*-gfs-t2m-mean-anom-equirect.webp
+           maps/*-gfs-t2m-mean-anom-equirect-metadata.json
+           maps/*-gfs-t2m-max-anom-equirect.webp
+           maps/*-gfs-t2m-max-anom-equirect-metadata.json
+           maps/*-gfs-t2m-min-anom-equirect.webp
+           maps/*-gfs-t2m-min-anom-equirect-metadata.json
            maps/index.json
                       
     - name: Upload files to S3 and generate index
