@@ -31,6 +31,8 @@ GitHub Actions workflow `.github/workflows/make-images.yml` runs nightly at 13:1
 
 - **`export_timeseries.py`** writes one JSON per region into `maps/timeseries/`. `upload-to-s3.py` walks subdirs recursively, so they land at `sea-surface-temp/timeseries/{region}.json` on S3. Don't flatten that layout — `index.json`'s `timeseries.regions` field is regenerated from the directory structure.
 
+- **Globe textures start 2024-01-01; graphs use the full record.** Map textures (equirect WebP) are only published from **2024-01-01** onward — older history would bloat users' browsers and S3 for little benefit. `generate_era5_textures_batch.py` defaults `--start 2024-01-01`; **time-series JSON (graphs) is never floored** — it covers the whole archive (ERA5 to 1982, GFS to 2021-03-23). A bulk GFS/ERA5 backfill renders earlier textures as a side effect of region aggregation (one `get_data_array` feeds both the texture and the cache), so before uploading, keep `<2024` texture files out of `./maps` while keeping every date in `data-cache.json`/`timeseries/`. `upload-to-s3.py` publishes whatever is in `./maps`, so the date floor is enforced by what's present, not by the uploader.
+
 ## Conventions
 
 - `uv` for everything Python (per global CLAUDE.md), type hints, ruff.

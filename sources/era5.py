@@ -58,20 +58,25 @@ _ERA5_SST_CMAP: list[list[Any]] = [
     [35, "#470000"],
 ]
 
-# 2m air-temperature shares SST's 0–32°C anchors so switching SST↔t2m gives
-# directly comparable colors in the populated temperature range; the upper end
-# extends to 45°C for hot land that SST never sees. Sub-zero regions
-# (Antarctica, NH winter, polar night) clip to darkblue — those values are all
-# uniformly "very cold" and dedicating cmap range to resolving −10°C vs −50°C
-# would squash detail in the 0–35°C band where most populated land lives.
+# 2m air-temperature shares SST's 0–28°C anchors so switching SST↔t2m gives
+# directly comparable colors in the populated/temperate range. Above 28°C the
+# ramp stretches in clear 4°C steps that stay in the red family — red→crimson→
+# raspberry→brick→maroon→near-black — darkening like charring embers, so hot
+# land (heatwaves, the Sahara, daily maxima to ~50°C) resolves into distinct
+# bands that all read as "hot" (no blue/violet that looks cold). Sub-zero
+# regions clip to darkblue — uniformly "very cold", so no cmap range is spent
+# resolving −10 vs −50°C.
 _ERA5_T2M_CMAP: list[list[Any]] = [
     [0,  "darkblue"],
     [20, "white"],
     [24, "yellow"],
     [28, "orange"],
-    [30, "red"],
-    [32, "darkred"],
-    [45, "#470000"],
+    [32, "#ed1c24"],  # red
+    [36, "#c41e3a"],  # crimson
+    [40, "#9e1b4a"],  # dark raspberry (red-leaning purple)
+    [44, "#7c1d1d"],  # brick
+    [48, "#4a0d0d"],  # dark maroon
+    [52, "#120000"],  # near-black
 ]
 
 # SST anomaly cmap, matching OISST's convention so the two sources' anom
@@ -120,6 +125,12 @@ _ERA5_T2M_ANOM_CMAP: list[list[Any]] = [
 CLIMATOLOGY_FILENAMES: dict[str, str] = {
     "sst": "era5-climatology-1971-2000.nc",
     "t2m": "era5-t2m-climatology-1971-2000.nc",
+    # Daily-max / -min t2m baselines for the GFS anomaly maps. Built from the
+    # CDS daily-statistics API (daily_maximum / daily_minimum) by
+    # scripts/build_era5_climatology.py; the GFS daily-mean anomaly reuses the
+    # plain "t2m" daily-mean climatology above.
+    "t2m_max": "era5-t2m-max-climatology-1971-2000.nc",
+    "t2m_min": "era5-t2m-min-climatology-1971-2000.nc",
 }
 
 

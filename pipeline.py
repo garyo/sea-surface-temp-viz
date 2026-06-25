@@ -240,6 +240,13 @@ async def process_map(source: DataSource, args) -> None:
         "month": date.month,
         "day": date.day,
     }
+    # Orthogonal axes (variable / statistic / kind) so the frontend can render
+    # independent selectors — e.g. a GFS min/mean/max button group. Only emitted
+    # for datasets that declare them; legacy single-axis datasets omit them.
+    for axis in ("variable", "statistic", "kind"):
+        val = getattr(spec, axis)
+        if val is not None:
+            metadata[axis] = val
     if args.out:
         out_dir = pathlib.Path(args.out)
         out_dir.mkdir(parents=True, exist_ok=True)

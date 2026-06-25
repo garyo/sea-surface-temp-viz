@@ -83,6 +83,7 @@ def fetch_chunk_aws(
     year: int,
     months: list[int],
     variable: str = "sst",
+    statistic: str = "mean",
 ) -> "xr.Dataset":
     """Fetch one (year, [months]) chunk of an ERA5 surface variable from
     the NSF NCAR AWS mirror.
@@ -133,8 +134,11 @@ def fetch_chunk_aws(
 
             with xr.open_dataset(local) as ds:
                 # (time, latitude, longitude) in Kelvin. SST is NaN over land;
-                # t2m is defined everywhere (land+sea+ice).
-                daily = ds[nc_var].groupby("time.date").mean("time")
+                # t2m is defined everywhere (land+sea+ice). Reduce the 24 hourly
+                # steps to one value per UTC day with the requested statistic —
+                # daily mean/max/min; the cross-year average happens downstream,
+                # so e.g. statistic="max" yields the mean-of-daily-maxima.
+                daily = getattr(ds[nc_var].groupby("time.date"), statistic)("time")
                 for d, arr in zip(daily["date"].values, daily.values, strict=True):
                     daily_arrays.append(np.asarray(arr, dtype=np.float32))
                     daily_times.append(np.datetime64(str(d)))
@@ -336,6 +340,17 @@ _VAR_LONG_NAME = {
 }
 
 
+def climatology_var_name(variable: str, statistic: str) -> str:
+    """NetCDF variable name for a (variable, statistic) climatology.
+
+    Daily-mean keeps the legacy ``{variable}_climatology`` name; max/min add
+    the statistic so the three coexist and match the keys sources/gfs.py loads
+    (``t2m`` → ``t2m_climatology``, ``t2m_max`` → ``t2m_max_climatology``).
+    """
+    key = variable if statistic == "mean" else f"{variable}_{statistic}"
+    return f"{key}_climatology"
+
+
 def save_climatology(
     path: Path,
     clim: np.ndarray,
@@ -343,12 +358,13 @@ def save_climatology(
     end: datetime.date,
     smoothing_window: int,
     variable: str = "sst",
+    statistic: str = "mean",
 ) -> None:
     """Write the climatology to NetCDF with zlib compression.
 
-    The output variable is always named ``{variable}_climatology`` so
-    downstream consumers (sources/era5.py) can branch on it without parsing
-    attributes.
+    The output variable is named by :func:`climatology_var_name` so downstream
+    consumers (sources/era5.py, sources/gfs.py) can branch on it without
+    parsing attributes.
     """
     import xarray as xr
 
@@ -356,7 +372,7 @@ def save_climatology(
     # everything else in the project).
     lats = np.arange(-89.875, 90.0, 0.25)
     lons = np.arange(0.125, 360.0, 0.25)
-    var_name = f"{variable}_climatology"
+    var_name = climatology_var_name(variable, statistic)
 
     da = xr.DataArray(
         clim.astype(np.float32),
@@ -367,18 +383,19 @@ def save_climatology(
             "longitude": lons.astype(np.float32),
         },
         attrs={
-            "long_name": f"ERA5 {_VAR_LONG_NAME[variable]} climatology (daily mean)",
+            "long_name": f"ERA5 {_VAR_LONG_NAME[variable]} climatology (daily {statistic})",
             "units": "degC",
             "baseline_start": start.isoformat(),
             "baseline_end": end.isoformat(),
             "smoothing": f"{smoothing_window}-day centered rolling mean along DOY (wrapped)",
-            "source": "ECMWF ERA5 (CDS derived-era5-single-levels-daily-statistics, daily_mean)",
+            "source": (
+                f"ECMWF ERA5 (NSF NCAR mirror, daily {statistic} of hourly 2t/sstk)"
+            ),
             "grid": "OISST 0.25° (720x1440, lat ascending -89.875..89.875, lon 0.125..359.875)",
             "comment": (
-                "Approximates OISST's weekly-aggregate climatology methodology "
-                "(NOAA CDR ATBD CDRP-ATBD-0303 §3.3.2) by smoothing the raw "
-                "30-year daily mean with a 7-day centered rolling window. "
-                "1971-1978 uses ERA5 back-extension."
+                "Per-DOY average over the baseline of each year's daily "
+                f"{statistic}, then a {smoothing_window}-day centered rolling "
+                "window along DOY. 1971-1978 uses ERA5 back-extension."
             ),
         },
         name=var_name,
@@ -403,15 +420,17 @@ def build(
     checkpoint_every: int = 1,
     source: str = "aws",
     variable: str = "sst",
+    statistic: str = "mean",
 ) -> int:
     if source == "aws":
         def fetcher(year: int, months: list[int]) -> "xr.Dataset":
-            return fetch_chunk_aws(year, months, variable=variable)
+            return fetch_chunk_aws(year, months, variable=variable, statistic=statistic)
     else:
-        if variable != "sst":
+        if variable != "sst" or statistic != "mean":
             raise ValueError(
-                f"--source cds only supports --variable sst (got {variable!r}); "
-                "use --source aws for t2m"
+                "--source cds only supports --variable sst --statistic mean "
+                f"(got variable={variable!r}, statistic={statistic!r}); "
+                "use --source aws for t2m and for max/min"
             )
         fetcher = fetch_chunk
     years = enumerate_years(start_date, end_date)
@@ -519,7 +538,10 @@ def build(
     clim_smoothed = smooth_doy(clim, smoothing_window)
 
     print(f"Writing {out_path}")
-    save_climatology(out_path, clim_smoothed, start_date, end_date, smoothing_window, variable=variable)
+    save_climatology(
+        out_path, clim_smoothed, start_date, end_date, smoothing_window,
+        variable=variable, statistic=statistic,
+    )
     size_mb = out_path.stat().st_size / (1024 * 1024)
     print(f"✓ Wrote {out_path} ({size_mb:.1f} MB)")
 
@@ -579,8 +601,16 @@ def main(argv: list[str] | None = None) -> int:
         choices=("sst", "t2m"),
         default="sst",
         help="Which ERA5 surface variable to climatology. 'sst' is sea-surface "
-             "temperature; 't2m' is 2 m air temperature. Output is written as "
-             "{variable}_climatology in the NetCDF.",
+             "temperature; 't2m' is 2 m air temperature.",
+    )
+    parser.add_argument(
+        "--statistic",
+        choices=("mean", "max", "min"),
+        default="mean",
+        help="Daily reduction to climatology. 'mean' is the daily-mean baseline "
+             "(legacy); 'max'/'min' build the mean-of-daily-max / -min baselines "
+             "that GFS max/min anomalies subtract. Output variable is "
+             "{variable}_climatology (mean) or {variable}_{statistic}_climatology.",
     )
     args = parser.parse_args(argv)
 
@@ -597,6 +627,7 @@ def main(argv: list[str] | None = None) -> int:
         checkpoint_every=args.checkpoint_every if args.checkpoint_every > 0 else 10**9,
         source=args.source,
         variable=args.variable,
+        statistic=args.statistic,
     )
 
 

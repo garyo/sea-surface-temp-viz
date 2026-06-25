@@ -30,6 +30,14 @@ class DatasetSpec:
     is a format string with a ``{date}`` placeholder. ``equirect_basename`` is
     the stem inserted between date and ``-equirect.webp`` — e.g.
     ``"sst-temp"`` produces ``"2026-05-08-sst-temp-equirect.webp"``.
+
+    ``variable`` / ``statistic`` / ``kind`` describe a dataset along three
+    orthogonal axes so the frontend can build independent selectors rather than
+    one flat dataset list. ``variable`` is the physical field (``"sst"``,
+    ``"t2m"``); ``statistic`` is the daily reduction (``"mean"``, ``"max"``,
+    ``"min"``) — GFS exposes all three as a separate button group; ``kind`` is
+    ``"temp"`` or ``"anomaly"``. They are emitted into each texture's
+    ``-metadata.json``. Left ``None`` for legacy single-axis datasets.
     """
 
     id: str
@@ -37,6 +45,9 @@ class DatasetSpec:
     title_template: str
     equirect_basename: str
     map_basename: str
+    variable: str | None = None
+    statistic: str | None = None
+    kind: str | None = None
 
 
 class DataSource(ABC):
