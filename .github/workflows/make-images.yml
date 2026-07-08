@@ -215,43 +215,15 @@ jobs:
         draft: false
         prerelease: false
         body: "Latest plots as of ${{ steps.date.outputs.date }}"
+        # Only the static-named assets embedded in README.md. The dated
+        # texture WebPs / metadata JSON are published to S3 by the next step
+        # (the frontend reads S3, not releases); uploading the full ~190-file
+        # set here tripped GitHub's secondary rate limit and failed the run.
         files: |
-           output/sst-sst-map.webp
-           output/sst-anom-map.webp
            output/sst-all.png
            output/sst-all-anom.png
-           output/sst-all.svg
-           output/sst-all-anom.svg
-           maps/sst-temp-equirect.webp
-           maps/sst-temp-equirect-metadata.json
-           maps/sst-temp-anomaly-equirect.webp
-           maps/sst-temp-anomaly-equirect-metadata.json
-           maps/*-sst-temp-equirect.webp
-           maps/*-sst-temp-equirect-metadata.json
-           maps/*-sst-temp-anomaly-equirect.webp
-           maps/*-sst-temp-anomaly-equirect-metadata.json
-           maps/*-era5-sst-equirect.webp
-           maps/*-era5-sst-equirect-metadata.json
-           maps/*-era5-t2m-equirect.webp
-           maps/*-era5-t2m-equirect-metadata.json
-           maps/*-era5-sst-anom-equirect.webp
-           maps/*-era5-sst-anom-equirect-metadata.json
-           maps/*-era5-t2m-anom-equirect.webp
-           maps/*-era5-t2m-anom-equirect-metadata.json
-           maps/*-gfs-t2m-mean-equirect.webp
-           maps/*-gfs-t2m-mean-equirect-metadata.json
-           maps/*-gfs-t2m-max-equirect.webp
-           maps/*-gfs-t2m-max-equirect-metadata.json
-           maps/*-gfs-t2m-min-equirect.webp
-           maps/*-gfs-t2m-min-equirect-metadata.json
-           maps/*-gfs-t2m-mean-anom-equirect.webp
-           maps/*-gfs-t2m-mean-anom-equirect-metadata.json
-           maps/*-gfs-t2m-max-anom-equirect.webp
-           maps/*-gfs-t2m-max-anom-equirect-metadata.json
-           maps/*-gfs-t2m-min-anom-equirect.webp
-           maps/*-gfs-t2m-min-anom-equirect-metadata.json
-           maps/index.json
-                      
+           output/sst-sst-map.webp
+           output/sst-anom-map.webp
     - name: Upload files to S3 and generate index
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}

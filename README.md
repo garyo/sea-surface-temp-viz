@@ -76,8 +76,8 @@ Here are the latest files, auto-produced daily by a github action (run
 daily at 15:05 UTC, just after the daily data update from NOAA). You can use
 these directly on the web via these URLs:
 
-- https://github.com/garyo/sea-surface-temp-viz/releases/latest/download/sst-map.png
-- https://github.com/garyo/sea-surface-temp-viz/releases/latest/download/sst-anom-map.png
+- https://github.com/garyo/sea-surface-temp-viz/releases/latest/download/sst-sst-map.webp
+- https://github.com/garyo/sea-surface-temp-viz/releases/latest/download/sst-anom-map.webp
 - https://github.com/garyo/sea-surface-temp-viz/releases/latest/download/sst-all.png
 - https://github.com/garyo/sea-surface-temp-viz/releases/latest/download/sst-all-anom.png
 
