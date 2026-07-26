@@ -43,16 +43,18 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-import regions  # noqa: E402
-from pipeline import cache_key, colormap_for  # noqa: E402
-from sources.era5 import Era5Source  # noqa: E402
-from sources.gfs import GfsSource, GfsFetchError, _build_daily_nc  # noqa: E402
+import regions
+from pipeline import cache_key, colormap_for
+from sources.era5 import Era5Source
+from sources.gfs import GfsFetchError, GfsSource, _build_daily_nc
 
 # The noaa-gfs-bdp-pds 0.25° atmos archive begins at the GFSv16 upgrade
 # (2021-03-23) — earlier dates have no gfs.tHHz.pgrb2.0p25 under atmos/ and just
 # 404 (the backfill skips them, but starting here avoids ~82 wasted lookups).
 DEFAULT_START = datetime.date(2021, 3, 23)
-S3_INDEX_URL = "https://climate-change-assets.s3.amazonaws.com/sea-surface-temp/index.json"
+S3_INDEX_URL = (
+    "https://climate-change-assets.s3.amazonaws.com/sea-surface-temp/index.json"
+)
 
 
 def daterange(start: datetime.date, end: datetime.date) -> list[datetime.date]:
@@ -107,8 +109,10 @@ def build_phase(
     """
     missing = [d for d in dates if not GfsSource.archive_path(archive_root, d).exists()]
     have = set(dates) - set(missing)
-    print(f"Fetch phase: {len(have)} cached, {len(missing)} to build from AWS "
-          f"({workers} worker processes)")
+    print(
+        f"Fetch phase: {len(have)} cached, {len(missing)} to build from AWS "
+        f"({workers} worker processes)"
+    )
     if not missing:
         return set(dates)
 
@@ -133,7 +137,9 @@ def build_phase(
                 el = time.time() - started
                 rate = done / max(el, 1)
                 eta = (len(missing) - done) / max(rate, 1e-3)
-                print(f"  [{done}/{len(missing)}] {rate*60:.0f}/min, ETA {eta/60:.1f}m")
+                print(
+                    f"  [{done}/{len(missing)}] {rate * 60:.0f}/min, ETA {eta / 60:.1f}m"
+                )
     return have
 
 
@@ -171,21 +177,31 @@ def render_aggregate_phase(
                         "title": spec.title_template.format(date=date_str),
                         "dataset": ds_id,
                         "date": date_str,
-                        "year": d.year, "month": d.month, "day": d.day,
+                        "year": d.year,
+                        "month": d.month,
+                        "day": d.day,
                         "variable": spec.variable,
                         "statistic": spec.statistic,
                         "kind": spec.kind,
                     }
                     for fn in source.equirect_filenames(ds_id, date_str):
                         out_path = out_dir / fn
-                        plt.imsave(out_path, data, cmap=cmap, vmin=vmin, vmax=vmax,
-                                   origin="lower")
-                        (out_path.parent / (out_path.stem + "-metadata.json")).write_text(
-                            json.dumps(metadata)
+                        plt.imsave(
+                            out_path,
+                            data,
+                            cmap=cmap,
+                            vmin=vmin,
+                            vmax=vmax,
+                            origin="lower",
                         )
+                        (
+                            out_path.parent / (out_path.stem + "-metadata.json")
+                        ).write_text(json.dumps(metadata))
                     for rid in region_ids:
                         val = regions.aggregate(data, lat_2d, lon_2d, rid)
-                        cache[cache_key(d.year, d.month, d.day, source.id, ds_id, rid)] = val
+                        cache[
+                            cache_key(d.year, d.month, d.day, source.id, ds_id, rid)
+                        ] = val
             ok += 1
         except Exception as e:  # noqa: BLE001 — surface for triage, keep going
             fail += 1
@@ -211,19 +227,35 @@ def _save_cache(cache: dict[str, float], path: Path) -> None:
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--start", type=_date, default=DEFAULT_START)
-    p.add_argument("--end", type=_date,
-                   default=datetime.date.today() - datetime.timedelta(days=1))
+    p.add_argument(
+        "--end",
+        type=_date,
+        default=datetime.datetime.now(datetime.UTC).date() - datetime.timedelta(days=1),
+    )
     p.add_argument("--archive-root", type=Path, default=GfsSource.archive_root)
     p.add_argument("--out", type=Path, default=Path("./maps"))
     p.add_argument("--cache-file", type=Path, default=Path("./data-cache.json"))
-    p.add_argument("--workers", type=int, default=8,
-                   help="Parallel AWS day-builds (network-bound)")
-    p.add_argument("--save-every", type=int, default=25,
-                   help="Flush data-cache.json every N rendered days")
-    p.add_argument("--datasets", type=lambda s: [x.strip() for x in s.split(",") if x.strip()],
-                   default=None, help="Comma-separated dataset ids (default: all available)")
-    p.add_argument("--skip-existing-on-s3", action="store_true", default=False,
-                   help="Skip dates already carrying a GFS texture on S3")
+    p.add_argument(
+        "--workers", type=int, default=8, help="Parallel AWS day-builds (network-bound)"
+    )
+    p.add_argument(
+        "--save-every",
+        type=int,
+        default=25,
+        help="Flush data-cache.json every N rendered days",
+    )
+    p.add_argument(
+        "--datasets",
+        type=lambda s: [x.strip() for x in s.split(",") if x.strip()],
+        default=None,
+        help="Comma-separated dataset ids (default: all available)",
+    )
+    p.add_argument(
+        "--skip-existing-on-s3",
+        action="store_true",
+        default=False,
+        help="Skip dates already carrying a GFS texture on S3",
+    )
     args = p.parse_args(argv)
 
     if args.end < args.start:
@@ -259,18 +291,29 @@ def main(argv: list[str] | None = None) -> int:
     available = build_phase(dates, args.archive_root, args.workers)
     print()
     ok, fail = render_aggregate_phase(
-        source, dates, available, dataset_ids, args.archive_root,
-        args.out, cache, args.cache_file, args.save_every,
+        source,
+        dates,
+        available,
+        dataset_ids,
+        args.archive_root,
+        args.out,
+        cache,
+        args.cache_file,
+        args.save_every,
     )
     print()
-    print(f"Done. Rendered {ok} days, {fail} failed, "
-          f"{len(dates) - len(available)} unavailable from AWS.")
-    print("Next: upload-to-s3.py (textures + index.json), export_timeseries.py (series).")
+    print(
+        f"Done. Rendered {ok} days, {fail} failed, "
+        f"{len(dates) - len(available)} unavailable from AWS."
+    )
+    print(
+        "Next: upload-to-s3.py (textures + index.json), export_timeseries.py (series)."
+    )
     return 0 if fail == 0 else 1
 
 
 def _date(s: str) -> datetime.date:
-    return datetime.datetime.strptime(s, "%Y-%m-%d").date()
+    return datetime.date.fromisoformat(s)
 
 
 if __name__ == "__main__":

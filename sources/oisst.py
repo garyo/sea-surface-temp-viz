@@ -10,14 +10,15 @@ from __future__ import annotations
 import datetime
 import io
 import re
+from collections.abc import Iterator
 from contextlib import AbstractContextManager, contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Iterator
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import h5py
 import numpy as np
 
-from .base import DataSource, DatasetSpec
+from .base import DatasetSpec, DataSource
 
 if TYPE_CHECKING:
     import aiohttp
@@ -51,7 +52,7 @@ async def _try_fetch(urls: list[str], session: aiohttp.ClientSession) -> bytes:
                 if response.status == 200:
                     return await response.read()
                 print(f"Failed to fetch {url}: status={response.status}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — any failure just tries the next URL
             print(f"Failed to fetch {url}: {e}")
     raise DataFetchError("All URL fetches failed")
 
@@ -90,7 +91,7 @@ class OisstSource(DataSource):
             return None
         return int(m.group(1)), int(m.group(2)), int(m.group(3))
 
-    datasets = {
+    datasets: ClassVar[dict[str, DatasetSpec]] = {
         "sst": DatasetSpec(
             id="sst",
             cmap_def=_OISST_SST_CMAP,

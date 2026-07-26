@@ -33,7 +33,7 @@ import math
 import re
 import sys
 from collections import defaultdict
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -54,8 +54,8 @@ def group_cache(
     cache: dict[str, float],
 ) -> dict[str, dict[str, dict[str, list[tuple[str, float]]]]]:
     """Group entries by region → source → dataset → [(date, value), ...]."""
-    grouped: dict[str, dict[str, dict[str, list[tuple[str, float]]]]] = (
-        defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+    grouped: dict[str, dict[str, dict[str, list[tuple[str, float]]]]] = defaultdict(
+        lambda: defaultdict(lambda: defaultdict(list))
     )
     skipped = 0
     for key, value in cache.items():
@@ -90,16 +90,12 @@ def build_payload(
                 "values": [v for _, v in entries],
             }
         sources_out[source_id] = {"datasets": ds_out}
-    label = (
-        regions.label_for(region_id)
-        if region_id in regions.REGIONS
-        else region_id
-    )
+    label = regions.label_for(region_id) if region_id in regions.REGIONS else region_id
     return {
         "region": region_id,
         "region_label": label,
         "sources": sources_out,
-        "updated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "updated": datetime.now(UTC).isoformat(timespec="seconds"),
     }
 
 
@@ -164,14 +160,14 @@ def main(argv: list[str] | None = None) -> int:
         type=int,
         default=365,
         help="Skip regions with fewer than this many dated values "
-             "(prevents thin-data uploads before the local backfill is done)",
+        "(prevents thin-data uploads before the local backfill is done)",
     )
     parser.add_argument(
         "--gap-report-days",
         type=int,
         default=120,
         help="Report interior missing days within this many days of each "
-             "series' latest date (visibility for upstream outages)",
+        "series' latest date (visibility for upstream outages)",
     )
     args = parser.parse_args(argv)
 
@@ -195,7 +191,11 @@ def main(argv: list[str] | None = None) -> int:
 
     for region_id, sources in sorted(grouped.items()):
         max_dates = max(
-            (len(entries) for datasets in sources.values() for entries in datasets.values()),
+            (
+                len(entries)
+                for datasets in sources.values()
+                for entries in datasets.values()
+            ),
             default=0,
         )
         if max_dates < MIN_DATES:

@@ -29,8 +29,8 @@ from pathlib import Path
 
 # Allow the sibling regions.py / sources package to be imported when run as a script.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-import regions  # noqa: E402
-from sources import SOURCES  # noqa: E402
+import regions
+from sources import SOURCES
 
 # Plausibility bounds for a regional daily-mean value (°C). A corrupt or
 # upstream-flagged NetCDF that still parses (e.g. ECMWF's "should not be used"
@@ -40,8 +40,8 @@ from sources import SOURCES  # noqa: E402
 # partial/poisoned entry. Absolute temps span roughly -90..+60 °C; regional
 # anomalies realistically stay well inside ±30 °C.
 _PLAUSIBLE_RANGE = {
-    "abs": (-100.0, 70.0),    # sst, t2m
-    "anom": (-40.0, 40.0),    # sst_anom, t2m_anom
+    "abs": (-100.0, 70.0),  # sst, t2m
+    "anom": (-40.0, 40.0),  # sst_anom, t2m_anom
 }
 
 
@@ -127,17 +127,27 @@ def main(argv: list[str] | None = None) -> int:
         help="Local NetCDF archive (default: source-specific, e.g. ./netcdf-archive for oisst)",
     )
     parser.add_argument("--cache-file", type=Path, default=Path("./data-cache.json"))
-    parser.add_argument("--workers", type=int, default=4,
-                        help="Parallel processes (each opens one NetCDF at a time)")
-    parser.add_argument("--flush-every", type=int, default=50,
-                        help="Save data-cache.json every N processed files")
     parser.add_argument(
-        "--regions", type=str, default="",
+        "--workers",
+        type=int,
+        default=4,
+        help="Parallel processes (each opens one NetCDF at a time)",
+    )
+    parser.add_argument(
+        "--flush-every",
+        type=int,
+        default=50,
+        help="Save data-cache.json every N processed files",
+    )
+    parser.add_argument(
+        "--regions",
+        type=str,
+        default="",
         help="Comma-separated region ids to recompute (default: all). "
-             "When set, every NetCDF in the archive is processed (the "
-             "all-keys-present skip is bypassed) and only the listed "
-             "regions are written to the cache. Useful for refreshing a "
-             "single basin after a mask change.",
+        "When set, every NetCDF in the archive is processed (the "
+        "all-keys-present skip is bypassed) and only the listed "
+        "regions are written to the cache. Useful for refreshing a "
+        "single basin after a mask change.",
     )
     args = parser.parse_args(argv)
 
@@ -180,9 +190,13 @@ def main(argv: list[str] | None = None) -> int:
             if ymd is None:
                 continue
             date_str = f"{ymd[0]:04}-{ymd[1]:02}-{ymd[2]:02}"
-            if not all_keys_present(date_str, cache, region_ids, args.source, dataset_ids):
+            if not all_keys_present(
+                date_str, cache, region_ids, args.source, dataset_ids
+            ):
                 todo.append(nc)
-        print(f"To compute: {len(todo)} files (skipping {len(nc_files) - len(todo)} fully cached)")
+        print(
+            f"To compute: {len(todo)} files (skipping {len(nc_files) - len(todo)} fully cached)"
+        )
 
     if not todo:
         print("Nothing to do.")
@@ -196,7 +210,7 @@ def main(argv: list[str] | None = None) -> int:
         for fut in as_completed(futures):
             try:
                 date_str, entries = fut.result()
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 — log the bad file, keep going
                 nc = futures[fut]
                 print(f"  ❌ {nc.name}: {e}")
                 continue
@@ -210,7 +224,7 @@ def main(argv: list[str] | None = None) -> int:
                 eta = (len(todo) - n_done) / max(rate, 0.001)
                 print(
                     f"[{n_done}/{len(todo)}] {date_str} "
-                    f"({rate:.1f}/s, ETA {eta/60:.1f}m)"
+                    f"({rate:.1f}/s, ETA {eta / 60:.1f}m)"
                 )
 
     save_cache(args.cache_file, cache)

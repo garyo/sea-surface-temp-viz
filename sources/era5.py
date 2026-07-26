@@ -27,17 +27,18 @@ import datetime
 import functools
 import re
 import tempfile
+from collections.abc import Iterator
 from contextlib import AbstractContextManager, contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Iterator
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import numpy as np
 
-from .base import DataSource, DatasetSpec
+from .base import DatasetSpec, DataSource
 
 if TYPE_CHECKING:
     import aiohttp
-    import xarray as xr  # noqa: F401
+    import xarray as xr
 
 
 # OISST cell-center grid (canonical target for both sources).
@@ -67,7 +68,7 @@ _ERA5_SST_CMAP: list[list[Any]] = [
 # regions clip to darkblue — uniformly "very cold", so no cmap range is spent
 # resolving −10 vs −50°C.
 _ERA5_T2M_CMAP: list[list[Any]] = [
-    [0,  "darkblue"],
+    [0, "darkblue"],
     [20, "white"],
     [24, "yellow"],
     [28, "orange"],
@@ -83,13 +84,13 @@ _ERA5_T2M_CMAP: list[list[Any]] = [
 # overlays look identical at a glance. Asymmetric (warm side extends to +7°C,
 # cold side stops at -3°C) — anomalies skew warm under the current climate.
 _ERA5_SST_ANOM_CMAP: list[list[Any]] = [
-    [-3,   "darkblue"],
+    [-3, "darkblue"],
     [-0.5, "lightblue"],
-    [0,    "white"],
-    [1.5,  "yellow"],
-    [3,    "red"],
-    [5,    "darkred"],
-    [7,    "#470000"],
+    [0, "white"],
+    [1.5, "yellow"],
+    [3, "red"],
+    [5, "darkred"],
+    [7, "#470000"],
 ]
 
 # 2 m air-temperature anomaly cmap. The daily distribution is sharply peaked
@@ -100,21 +101,21 @@ _ERA5_SST_ANOM_CMAP: list[list[Any]] = [
 # into ±4°C for fine detail where the data lives and compress the rare tails.
 # Same white-centered diverging structure as the SST anomaly map.
 _ERA5_T2M_ANOM_CMAP: list[list[Any]] = [
-    [-10,  "darkblue"],
-    [-6,   "#2166ac"],
-    [-3,   "#4393c3"],
+    [-10, "darkblue"],
+    [-6, "#2166ac"],
+    [-3, "#4393c3"],
     [-1.5, "lightblue"],
     [-0.5, "#e2eff9"],
-    [0,    "white"],
-    [0.5,  "#fffac0"],
-    [1.0,  "#fff176"],
-    [2.0,  "#ffe000"],
-    [3.0,  "#ffc107"],
-    [4.0,  "#ff9800"],
-    [6.0,  "#ff5722"],
-    [9.0,  "#e53935"],
-    [13,   "darkred"],
-    [16,   "#470000"],
+    [0, "white"],
+    [0.5, "#fffac0"],
+    [1.0, "#fff176"],
+    [2.0, "#ffe000"],
+    [3.0, "#ffc107"],
+    [4.0, "#ff9800"],
+    [6.0, "#ff5722"],
+    [9.0, "#e53935"],
+    [13, "darkred"],
+    [16, "#470000"],
 ]
 
 
@@ -178,7 +179,7 @@ class Era5FetchError(Exception):
 _FILENAME_RE = re.compile(r"era5-(\d{4})(\d{2})(\d{2})\.nc$")
 
 
-def _resample_to_oisst_grid(ds: "xr.Dataset") -> "xr.Dataset":
+def _resample_to_oisst_grid(ds: xr.Dataset) -> xr.Dataset:
     """Linearly interpolate ERA5 (90→-90 lat, 0→359.75 lon) onto OISST cell centers.
 
     Pads one wrap-around column at lon=360 so OISST's max cell center (359.875)
@@ -274,7 +275,7 @@ class Era5Source(DataSource):
     id = "era5"
     grid_shape = (720, 1440)  # post-resample, matches OISST masks
 
-    datasets = {
+    datasets: ClassVar[dict[str, DatasetSpec]] = {
         "sst": DatasetSpec(
             id="sst",
             cmap_def=_ERA5_SST_CMAP,
@@ -332,7 +333,7 @@ class Era5Source(DataSource):
         date: datetime.date,
         session: aiohttp.ClientSession,  # unused; kept for interface parity
         semaphore: Any,  # unused; CDS imposes its own rate limit
-    ) -> "xr.Dataset":
+    ) -> xr.Dataset:
         """Download + resample one date. Returns an in-memory xarray Dataset.
 
         Caches under ``./era5-archive/`` so re-runs (e.g. the daily cron's
@@ -353,9 +354,9 @@ class Era5Source(DataSource):
         with xr.open_dataset(out_path) as ds:
             return ds.load()
 
-    def open_local(self, path: Path) -> AbstractContextManager["xr.Dataset"]:
+    def open_local(self, path: Path) -> AbstractContextManager[xr.Dataset]:
         @contextmanager
-        def _opener() -> Iterator["xr.Dataset"]:
+        def _opener() -> Iterator[xr.Dataset]:
             import xarray as xr
 
             with xr.open_dataset(path) as ds:
@@ -363,7 +364,7 @@ class Era5Source(DataSource):
 
         return _opener()
 
-    def latlon_2d(self, raw: "xr.Dataset") -> tuple[np.ndarray, np.ndarray]:
+    def latlon_2d(self, raw: xr.Dataset) -> tuple[np.ndarray, np.ndarray]:
         lat_1d = raw["latitude"].values
         lon_1d = raw["longitude"].values
         lon_2d, lat_2d = np.meshgrid(lon_1d, lat_1d)
@@ -372,11 +373,11 @@ class Era5Source(DataSource):
     # Map derived anomaly datasets to (raw NetCDF var, climatology variable).
     # sst_anom = raw sst minus sst climatology; t2m_anom = raw t2m minus
     # t2m climatology.
-    _ANOM_PARENT: dict[str, str] = {"sst_anom": "sst", "t2m_anom": "t2m"}
+    _ANOM_PARENT: ClassVar[dict[str, str]] = {"sst_anom": "sst", "t2m_anom": "t2m"}
 
     def get_data_array(
         self,
-        raw: "xr.Dataset",
+        raw: xr.Dataset,
         dataset_id: str,
         **_kwargs: Any,
     ) -> np.ma.MaskedArray:

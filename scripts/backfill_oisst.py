@@ -53,7 +53,11 @@ def date_range(start: datetime.date, end: datetime.date):
 
 
 def file_path(archive_root: Path, d: datetime.date) -> Path:
-    return archive_root / f"{d.year:04}" / f"oisst-avhrr-v02r01.{d.year:04}{d.month:02}{d.day:02}.nc"
+    return (
+        archive_root
+        / f"{d.year:04}"
+        / f"oisst-avhrr-v02r01.{d.year:04}{d.month:02}{d.day:02}.nc"
+    )
 
 
 def urls_for(d: datetime.date) -> list[str]:
@@ -65,7 +69,9 @@ def urls_for(d: datetime.date) -> list[str]:
     ]
 
 
-def download_one(d: datetime.date, archive_root: Path, retries: int = 3) -> tuple[datetime.date, str]:
+def download_one(
+    d: datetime.date, archive_root: Path, retries: int = 3
+) -> tuple[datetime.date, str]:
     """Returns (date, status) where status is 'ok', 'skip', or 'fail: <reason>'."""
     out = file_path(archive_root, d)
     if out.exists() and out.stat().st_size > 0:
@@ -83,7 +89,7 @@ def download_one(d: datetime.date, archive_root: Path, retries: int = 3) -> tupl
                     tmp.rename(out)
                     return (d, "ok")
                 last_err = f"HTTP {resp.status_code}"
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 — retry with backoff, report last error
                 last_err = str(e)
                 time.sleep(1 + attempt)  # gentle backoff
     return (d, f"fail: {last_err}")
@@ -99,13 +105,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--start",
-        type=lambda s: datetime.datetime.strptime(s, "%Y-%m-%d").date(),
+        type=datetime.date.fromisoformat,
         default=DEFAULT_START,
     )
     parser.add_argument(
         "--end",
-        type=lambda s: datetime.datetime.strptime(s, "%Y-%m-%d").date(),
-        default=datetime.date.today() - datetime.timedelta(days=2),
+        type=datetime.date.fromisoformat,
+        default=datetime.datetime.now(datetime.UTC).date() - datetime.timedelta(days=2),
         help="Inclusive end date (default: 2 days before today)",
     )
     parser.add_argument("--workers", type=int, default=8)
@@ -137,7 +143,7 @@ def main(argv: list[str] | None = None) -> int:
                 eta = (len(futures) - i) / max(rate, 0.001)
                 print(
                     f"[{i}/{len(futures)}] ok={ok} skip={skip} fail={fail} "
-                    f"({rate:.1f}/s, ETA {eta/60:.1f}m)"
+                    f"({rate:.1f}/s, ETA {eta / 60:.1f}m)"
                 )
 
     print()

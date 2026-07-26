@@ -40,18 +40,28 @@ def load(path: Path) -> dict[str, float]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--committed", type=Path, default=Path("./data-cache.json"))
-    parser.add_argument("--s3", type=Path, required=True,
-                        help="S3-downloaded cache (may not exist on the first run)")
-    parser.add_argument("--out", type=Path, default=None,
-                        help="Output path (default: --committed, in place)")
+    parser.add_argument(
+        "--s3",
+        type=Path,
+        required=True,
+        help="S3-downloaded cache (may not exist on the first run)",
+    )
+    parser.add_argument(
+        "--out",
+        type=Path,
+        default=None,
+        help="Output path (default: --committed, in place)",
+    )
     args = parser.parse_args(argv)
     out = args.out or args.committed
 
     committed = load(args.committed)
 
     if not args.s3.exists() or args.s3.stat().st_size == 0:
-        print(f"No S3 cache at {args.s3}; keeping committed cache "
-              f"({len(committed)} entries) unchanged.")
+        print(
+            f"No S3 cache at {args.s3}; keeping committed cache "
+            f"({len(committed)} entries) unchanged."
+        )
         if out != args.committed:
             with out.open("w") as f:
                 json.dump(committed, f, sort_keys=True, indent=1)

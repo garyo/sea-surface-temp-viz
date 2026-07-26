@@ -7,7 +7,7 @@ subclass. ``pipeline.py`` looks up the requested source here.
 
 from __future__ import annotations
 
-from .base import DataSource, DatasetSpec
+from .base import DatasetSpec, DataSource
 from .era5 import Era5Source
 from .gfs import GfsSource
 from .oisst import OisstSource
@@ -19,10 +19,10 @@ SOURCES: dict[str, type[DataSource]] = {
 }
 
 __all__ = [
+    "SOURCES",
     "DataSource",
     "DatasetSpec",
     "Era5Source",
     "GfsSource",
     "OisstSource",
-    "SOURCES",
 ]

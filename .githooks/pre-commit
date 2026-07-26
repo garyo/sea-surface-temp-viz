@@ -1,0 +1,6 @@
+#!/bin/sh
+# Ruff gate: lint + format check on staged Python files.
+# One-time setup after cloning:  git config core.hooksPath .githooks
+files=$(git diff --cached --name-only --diff-filter=ACMR -- '*.py')
+[ -z "$files" ] && exit 0
+uv run ruff check $files && uv run ruff format --check $files

@@ -36,4 +36,6 @@ GitHub Actions workflow `.github/workflows/make-images.yml` runs nightly at 13:1
 ## Conventions
 
 - `uv` for everything Python (per global CLAUDE.md), type hints, ruff.
+- A pre-commit hook (`.githooks/pre-commit`) runs `ruff check` + `ruff format --check` on staged Python files. One-time setup after cloning: `git config core.hooksPath .githooks`.
+- "Today" means UTC (`pipeline.utc_today()` / `datetime.now(UTC).date()`) — data dates follow the sources' UTC calendar and CI runs in UTC; don't reintroduce naive `date.today()`.
 - Don't add a "refresh cache" commit — the cache file changes whenever you run the pipeline locally; only commit it when the change is intentional (e.g. a backfill).

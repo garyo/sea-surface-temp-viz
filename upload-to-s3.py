@@ -7,14 +7,13 @@ import os
 import re
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
+from datetime import UTC, date, datetime, timedelta
 from multiprocessing import cpu_count
+from pathlib import Path
 
 import boto3
 from botocore.exceptions import ClientError
 from dotenv import load_dotenv
-
 
 # Cache policy by extension.
 # - JSON files (timeseries/*.json, index.json) are mutable — replaced every
@@ -25,10 +24,10 @@ from dotenv import load_dotenv
 #   and never change once written, so a longer TTL is safe and saves bandwidth
 #   when users scrub the time slider.
 CACHE_CONTROL_BY_EXT = {
-    ".json": "public, max-age=300",      # 5 min: small files, freshness matters
-    ".webp": "public, max-age=86400",    # 1 day: date-stamped, immutable in practice
-    ".png":  "public, max-age=86400",
-    ".svg":  "public, max-age=86400",
+    ".json": "public, max-age=300",  # 5 min: small files, freshness matters
+    ".webp": "public, max-age=86400",  # 1 day: date-stamped, immutable in practice
+    ".png": "public, max-age=86400",
+    ".svg": "public, max-age=86400",
 }
 
 
@@ -57,7 +56,7 @@ def upload_file_to_s3(s3_client, local_path, bucket, s3_key, dry_run=False):
             # Note: Not setting ACL - bucket policy should control public access
             **kwargs,
         )
-        print(f"  ✓ Uploaded successfully")
+        print("  ✓ Uploaded successfully")
     except Exception as e:
         print(f"  ✗ Error uploading {local_path}: {e}")
         raise
@@ -87,7 +86,7 @@ def delete_file_from_s3(
     try:
         print(f"Deleting: s3://{bucket}/{s3_key}")
         s3_client.delete_object(Bucket=bucket, Key=s3_key)
-        print(f"  ✓ Deleted successfully")
+        print("  ✓ Deleted successfully")
 
         # After deleting, regenerate and upload index.json
         print()
@@ -170,7 +169,7 @@ def list_bucket_contents(bucket, s3_prefix, aws_access_key=None, aws_secret_key=
         print()
         print(f"Total: {file_count} files, {total_size / (1024 * 1024):.2f} MB")
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — report and exit nonzero
         print(f"Error listing bucket contents: {e}")
         sys.exit(1)
 
@@ -214,7 +213,6 @@ def validate_data_completeness(s3_client, bucket, s3_prefix):
         return
 
     # Check for mismatched datasets
-    all_dates = sst_dates | anom_dates
     sst_only = sst_dates - anom_dates
     anom_only = anom_dates - sst_dates
 
@@ -222,8 +220,8 @@ def validate_data_completeness(s3_client, bucket, s3_prefix):
         print(
             f"⚠️  Warning: {len(sst_only)} date(s) have SST data but missing anomaly data:"
         )
-        for date in sorted(sst_only)[:10]:  # Show first 10
-            print(f"     - {date}")
+        for d in sorted(sst_only)[:10]:  # Show first 10
+            print(f"     - {d}")
         if len(sst_only) > 10:
             print(f"     ... and {len(sst_only) - 10} more")
 
@@ -231,23 +229,23 @@ def validate_data_completeness(s3_client, bucket, s3_prefix):
         print(
             f"⚠️  Warning: {len(anom_only)} date(s) have anomaly data but missing SST data:"
         )
-        for date in sorted(anom_only)[:10]:  # Show first 10
-            print(f"     - {date}")
+        for d in sorted(anom_only)[:10]:  # Show first 10
+            print(f"     - {d}")
         if len(anom_only) > 10:
             print(f"     ... and {len(anom_only) - 10} more")
 
     # Check for gaps in date sequence (only for dates with complete data)
-    complete_dates = sorted(list(sst_dates & anom_dates))
+    complete_dates = sorted(sst_dates & anom_dates)
     if len(complete_dates) < 2:
         return
 
     missing_dates = []
-    start_date = datetime.strptime(complete_dates[0], "%Y-%m-%d")
-    end_date = datetime.strptime(complete_dates[-1], "%Y-%m-%d")
+    start_date = date.fromisoformat(complete_dates[0])
+    end_date = date.fromisoformat(complete_dates[-1])
     current_date = start_date
 
     while current_date <= end_date:
-        date_str = current_date.strftime("%Y-%m-%d")
+        date_str = current_date.isoformat()
         if date_str not in complete_dates:
             missing_dates.append(date_str)
         current_date += timedelta(days=1)
@@ -256,8 +254,8 @@ def validate_data_completeness(s3_client, bucket, s3_prefix):
         print(
             f"⚠️  Warning: {len(missing_dates)} missing date(s) in sequence from {complete_dates[0]} to {complete_dates[-1]}:"
         )
-        for date in missing_dates[:10]:  # Show first 10
-            print(f"     - {date}")
+        for d in missing_dates[:10]:  # Show first 10
+            print(f"     - {d}")
         if len(missing_dates) > 10:
             print(f"     ... and {len(missing_dates) - 10} more")
 
@@ -293,9 +291,7 @@ def generate_index_from_s3(bucket, s3_prefix, aws_access_key=None, aws_secret_ke
     timeseries_regions: set[str] = set()
 
     oisst_sst_re = re.compile(r"(\d{4}-\d{2}-\d{2})-sst-temp-equirect\.webp$")
-    oisst_anom_re = re.compile(
-        r"(\d{4}-\d{2}-\d{2})-sst-temp-anomaly-equirect\.webp$"
-    )
+    oisst_anom_re = re.compile(r"(\d{4}-\d{2}-\d{2})-sst-temp-anomaly-equirect\.webp$")
     # Greedy source token is a single segment; the dataset token is everything
     # up to -equirect, so it captures multi-segment ids like "sst-anom".
     prefixed_re = re.compile(
@@ -303,16 +299,16 @@ def generate_index_from_s3(bucket, s3_prefix, aws_access_key=None, aws_secret_ke
     )
 
     def add_date(source: str, dataset: str, date: str) -> None:
-        per_source_dataset_dates.setdefault(source, {}).setdefault(
-            dataset, set()
-        ).add(date)
+        per_source_dataset_dates.setdefault(source, {}).setdefault(dataset, set()).add(
+            date
+        )
 
     for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
         if "Contents" not in page:
             continue
 
         for obj in page["Contents"]:
-            key_rel = obj["Key"][len(prefix):] if prefix else obj["Key"]
+            key_rel = obj["Key"][len(prefix) :] if prefix else obj["Key"]
             filename = key_rel.split("/")[-1]
 
             # OISST's legacy filenames must be checked before prefixed_re,
@@ -375,8 +371,8 @@ def generate_index_from_s3(bucket, s3_prefix, aws_access_key=None, aws_secret_ke
         try:
             obj = s3_client.get_object(Bucket=bucket, Key=probe_key)
             payload = json.loads(obj["Body"].read())
-            timeseries_sources_list = sorted(list(payload.get("sources", {}).keys()))
-        except Exception as e:
+            timeseries_sources_list = sorted(payload.get("sources", {}).keys())
+        except Exception as e:  # noqa: BLE001 — probe is best-effort
             print(f"  ⚠️  Could not probe sources via {probe_key}: {e}")
 
     index = {
@@ -389,7 +385,9 @@ def generate_index_from_s3(bucket, s3_prefix, aws_access_key=None, aws_secret_ke
         "timeseries": {"regions": regions_list, "sources": timeseries_sources_list},
     }
 
-    print(f"Generated index from S3 with {len(dates_list)} dates (union of all sources)")
+    print(
+        f"Generated index from S3 with {len(dates_list)} dates (union of all sources)"
+    )
     if dates_list:
         print(f"  Union date range: {dates_list[0]} to {dates_list[-1]}")
         print(f"  Latest (OISST): {index['latest']}")
@@ -458,7 +456,7 @@ def should_skip_upload(
 
     local_stat = local_path.stat()
     local_size = local_stat.st_size
-    local_mtime = datetime.fromtimestamp(local_stat.st_mtime, tz=timezone.utc)
+    local_mtime = datetime.fromtimestamp(local_stat.st_mtime, tz=UTC)
 
     if debug:
         remote_ts = remote_last_modified.isoformat()
@@ -508,11 +506,7 @@ def upload_maps_directory(
 
     # Get all files to upload (recursively, excluding any existing index.json).
     # Subdirs (e.g. maps/timeseries/) are mirrored under the S3 prefix.
-    files = [
-        f
-        for f in maps_path.rglob("*")
-        if f.is_file() and f.name != "index.json"
-    ]
+    files = [f for f in maps_path.rglob("*") if f.is_file() and f.name != "index.json"]
     if not files:
         print(f"No files found in {maps_dir}")
         return

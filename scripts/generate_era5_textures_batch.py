@@ -33,11 +33,13 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from sources.era5 import Era5Source  # noqa: E402
-from pipeline import colormap_for  # noqa: E402
+from pipeline import colormap_for
+from sources.era5 import Era5Source
 
 DEFAULT_START = datetime.date(2024, 1, 1)
-S3_INDEX_URL = "https://climate-change-assets.s3.amazonaws.com/sea-surface-temp/index.json"
+S3_INDEX_URL = (
+    "https://climate-change-assets.s3.amazonaws.com/sea-surface-temp/index.json"
+)
 
 
 def fetch_s3_era5_dates() -> set[str]:
@@ -57,19 +59,17 @@ def fetch_s3_era5_dates() -> set[str]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--archive-root", type=Path, default=Era5Source.archive_root
-    )
+    parser.add_argument("--archive-root", type=Path, default=Era5Source.archive_root)
     parser.add_argument("--out", type=Path, default=Path("./maps"))
     parser.add_argument(
         "--start",
-        type=lambda s: datetime.datetime.strptime(s, "%Y-%m-%d").date(),
+        type=datetime.date.fromisoformat,
         default=DEFAULT_START,
     )
     parser.add_argument(
         "--end",
-        type=lambda s: datetime.datetime.strptime(s, "%Y-%m-%d").date(),
-        default=datetime.date.today() - datetime.timedelta(days=7),
+        type=datetime.date.fromisoformat,
+        default=datetime.datetime.now(datetime.UTC).date() - datetime.timedelta(days=7),
     )
     parser.add_argument(
         "--skip-existing-on-s3",
@@ -108,10 +108,7 @@ def main(argv: list[str] | None = None) -> int:
     dataset_ids = args.datasets or list(source.datasets)
     unknown = [d for d in dataset_ids if d not in source.datasets]
     if unknown:
-        parser.error(
-            f"unknown dataset(s) {unknown}; "
-            f"era5 has {list(source.datasets)}"
-        )
+        parser.error(f"unknown dataset(s) {unknown}; era5 has {list(source.datasets)}")
     print(f"Datasets: {dataset_ids}")
     cmaps = {ds_id: colormap_for(source.datasets[ds_id]) for ds_id in dataset_ids}
 
@@ -157,8 +154,12 @@ def main(argv: list[str] | None = None) -> int:
                     for filename in source.equirect_filenames(ds_id, date_str):
                         out_path = args.out / filename
                         plt.imsave(
-                            out_path, data, cmap=cmap,
-                            vmin=vmin, vmax=vmax, origin="lower",
+                            out_path,
+                            data,
+                            cmap=cmap,
+                            vmin=vmin,
+                            vmax=vmax,
+                            origin="lower",
                         )
                         meta_out = out_path.parent / (out_path.stem + "-metadata.json")
                         meta_out.write_text(json.dumps(metadata))
@@ -173,11 +174,13 @@ def main(argv: list[str] | None = None) -> int:
             eta = (len(dates) - i) / max(rate, 0.001)
             print(
                 f"[{i}/{len(dates)}] ok={ok} skip={skip} miss={miss} fail={fail} "
-                f"({rate:.1f}/s, ETA {eta/60:.1f}m)"
+                f"({rate:.1f}/s, ETA {eta / 60:.1f}m)"
             )
 
     print()
-    print(f"Done. Wrote: {ok}, Skipped: {skip}, Missing archive: {miss}, Failed: {fail}")
+    print(
+        f"Done. Wrote: {ok}, Skipped: {skip}, Missing archive: {miss}, Failed: {fail}"
+    )
     return 0 if fail == 0 else 1
 
 

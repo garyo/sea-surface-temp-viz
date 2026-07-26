@@ -59,7 +59,7 @@ import numpy as np
 
 # Sibling sources package import when run as a script.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from sources.era5 import _resample_to_oisst_grid  # noqa: E402
+from sources.era5 import _resample_to_oisst_grid
 
 if TYPE_CHECKING:
     import xarray as xr
@@ -84,7 +84,7 @@ def fetch_chunk_aws(
     months: list[int],
     variable: str = "sst",
     statistic: str = "mean",
-) -> "xr.Dataset":
+) -> xr.Dataset:
     """Fetch one (year, [months]) chunk of an ERA5 surface variable from
     the NSF NCAR AWS mirror.
 
@@ -108,7 +108,9 @@ def fetch_chunk_aws(
     from botocore.client import Config
 
     if variable not in _NCAR_VAR_INFO:
-        raise ValueError(f"variable must be one of {list(_NCAR_VAR_INFO)}, got {variable!r}")
+        raise ValueError(
+            f"variable must be one of {list(_NCAR_VAR_INFO)}, got {variable!r}"
+        )
     varcode, nc_var = _NCAR_VAR_INFO[variable]
 
     s3 = boto3.client(
@@ -160,7 +162,7 @@ def fetch_chunk_aws(
     return _resample_to_oisst_grid(merged).load()
 
 
-def fetch_chunk(year: int, months: list[int]) -> "xr.Dataset":
+def fetch_chunk(year: int, months: list[int]) -> xr.Dataset:
     """Fetch one (year, [months]) chunk of ERA5 daily-mean SST in one CDS request.
 
     ``months`` can be a single month or all 12. CDS accepts year/month/day as
@@ -307,7 +309,7 @@ def save_checkpoint(
 
 
 def accumulate_month(
-    ds: "xr.Dataset",
+    ds: xr.Dataset,
     sum_grid: np.ndarray,
     count_grid: np.ndarray,
 ) -> int:
@@ -423,7 +425,8 @@ def build(
     statistic: str = "mean",
 ) -> int:
     if source == "aws":
-        def fetcher(year: int, months: list[int]) -> "xr.Dataset":
+
+        def fetcher(year: int, months: list[int]) -> xr.Dataset:
             return fetch_chunk_aws(year, months, variable=variable, statistic=statistic)
     else:
         if variable != "sst" or statistic != "mean":
@@ -454,7 +457,9 @@ def build(
         completed = set()
 
     remaining = [y for y in years if y not in completed]
-    print(f"Building ERA5 SST climatology {start_date}..{end_date} ({len(years)} years)")
+    print(
+        f"Building ERA5 SST climatology {start_date}..{end_date} ({len(years)} years)"
+    )
     print(f"  Output:     {out_path}")
     print(f"  Checkpoint: {checkpoint_path} (saved every {checkpoint_every} yr)")
     print(f"  Workers:    {workers}, smoothing: {smoothing_window}-day rolling mean")
@@ -492,8 +497,8 @@ def build(
                 total_done = len(completed)
                 print(
                     f"[{total_done}/{len(years)}] {yr} +{added}d "
-                    f"(this run {n_done_this_run}d, {rate*60:.1f} yr/min, "
-                    f"ETA {eta/60:.1f}m)"
+                    f"(this run {n_done_this_run}d, {rate * 60:.1f} yr/min, "
+                    f"ETA {eta / 60:.1f}m)"
                 )
                 if len(completed) - last_checkpoint_at >= checkpoint_every:
                     save_checkpoint(checkpoint_path, sum_grid, count_grid, completed)
@@ -511,12 +516,16 @@ def build(
         if len(failed) > max(1, len(years) // 10):
             print("Too many failures (>10%). Aborting before write.")
             return 1
-        print("Continuing with partial coverage; gaps will show as low count_grid pixels.")
+        print(
+            "Continuing with partial coverage; gaps will show as low count_grid pixels."
+        )
 
     print()
     print("Computing per-pixel mean...")
     with np.errstate(invalid="ignore", divide="ignore"):
-        clim = np.where(count_grid > 0, sum_grid / count_grid, np.nan).astype(np.float32)
+        clim = np.where(count_grid > 0, sum_grid / count_grid, np.nan).astype(
+            np.float32
+        )
 
     # Diagnostic: how well-covered is each DOY?
     cov = (count_grid > 0).any(axis=(1, 2)).sum()
@@ -539,8 +548,13 @@ def build(
 
     print(f"Writing {out_path}")
     save_climatology(
-        out_path, clim_smoothed, start_date, end_date, smoothing_window,
-        variable=variable, statistic=statistic,
+        out_path,
+        clim_smoothed,
+        start_date,
+        end_date,
+        smoothing_window,
+        variable=variable,
+        statistic=statistic,
     )
     size_mb = out_path.stat().st_size / (1024 * 1024)
     print(f"✓ Wrote {out_path} ({size_mb:.1f} MB)")
@@ -556,12 +570,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--start",
-        type=lambda s: datetime.datetime.strptime(s, "%Y-%m-%d").date(),
+        type=datetime.date.fromisoformat,
         default=datetime.date(1971, 1, 1),
     )
     parser.add_argument(
         "--end",
-        type=lambda s: datetime.datetime.strptime(s, "%Y-%m-%d").date(),
+        type=datetime.date.fromisoformat,
         default=datetime.date(2000, 12, 31),
     )
     parser.add_argument(
@@ -586,31 +600,31 @@ def main(argv: list[str] | None = None) -> int:
         type=int,
         default=1,
         help="Flush the accumulator to disk every N processed years so a "
-             "crash mid-run doesn't lose hours of CDS work. Set 0 to disable.",
+        "crash mid-run doesn't lose hours of CDS work. Set 0 to disable.",
     )
     parser.add_argument(
         "--source",
         choices=("aws", "cds"),
         default="aws",
         help="Where to fetch raw ERA5 from. 'aws' = NSF NCAR S3 mirror "
-             "(s3://nsf-ncar-era5, unsigned, no queue — preferred); "
-             "'cds' = Copernicus CDS API (subject to throttling, sst only).",
+        "(s3://nsf-ncar-era5, unsigned, no queue — preferred); "
+        "'cds' = Copernicus CDS API (subject to throttling, sst only).",
     )
     parser.add_argument(
         "--variable",
         choices=("sst", "t2m"),
         default="sst",
         help="Which ERA5 surface variable to climatology. 'sst' is sea-surface "
-             "temperature; 't2m' is 2 m air temperature.",
+        "temperature; 't2m' is 2 m air temperature.",
     )
     parser.add_argument(
         "--statistic",
         choices=("mean", "max", "min"),
         default="mean",
         help="Daily reduction to climatology. 'mean' is the daily-mean baseline "
-             "(legacy); 'max'/'min' build the mean-of-daily-max / -min baselines "
-             "that GFS max/min anomalies subtract. Output variable is "
-             "{variable}_climatology (mean) or {variable}_{statistic}_climatology.",
+        "(legacy); 'max'/'min' build the mean-of-daily-max / -min baselines "
+        "that GFS max/min anomalies subtract. Output variable is "
+        "{variable}_climatology (mean) or {variable}_{statistic}_climatology.",
     )
     args = parser.parse_args(argv)
 

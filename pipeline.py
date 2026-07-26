@@ -24,7 +24,6 @@ import json
 import pathlib
 import sys
 from collections import defaultdict
-from typing import DefaultDict
 
 import aiohttp
 import matplotlib.pyplot as plt
@@ -65,7 +64,14 @@ temps_cache_file: str = "./data-cache.json"
 temps_cache: dict = {}
 
 
-def cache_key(year: int, mo: int, day: int, source: str, dataset: str, region: str) -> str:
+def utc_today() -> datetime.date:
+    """Current UTC date — data dates follow the sources' UTC calendar."""
+    return datetime.datetime.now(datetime.UTC).date()
+
+
+def cache_key(
+    year: int, mo: int, day: int, source: str, dataset: str, region: str
+) -> str:
     return f"{year:04}-{mo:02}-{day:02}-{source}-{dataset}-{region}"
 
 
@@ -82,13 +88,14 @@ def load_cache(path) -> None:
     try:
         with open(temps_cache_file, "r") as f:
             temps_cache = json.load(f)
-    except IOError:
+    except OSError:
         temps_cache = {}
 
 
 # ---------------------------------------------------------------------------
 # Fetch + aggregate
 # ---------------------------------------------------------------------------
+
 
 async def get_temp_for_date(
     source: DataSource,
@@ -108,7 +115,9 @@ async def get_temp_for_date(
     cost, so we never want to revisit the same date for a different region.
     """
     async with lock:
-        cached = temps_cache.get(cache_key(year, mo, day, source.id, dataset_name, region))
+        cached = temps_cache.get(
+            cache_key(year, mo, day, source.id, dataset_name, region)
+        )
         if cached is not None:
             return (year, mo, day, cached)
 
@@ -118,7 +127,9 @@ async def get_temp_for_date(
         all_aggs = source.aggregate_all_regions(raw)
         for ds_name, by_region in all_aggs.items():
             for region_id, val in by_region.items():
-                temps_cache[cache_key(year, mo, day, source.id, ds_name, region_id)] = val
+                temps_cache[cache_key(year, mo, day, source.id, ds_name, region_id)] = (
+                    val
+                )
         t = temps_cache[cache_key(year, mo, day, source.id, dataset_name, region)]
         print(f"Computed {dataset_name} {year}-{mo:02}-{day:02} ({region}): {t:.4f}°C")
         do_save = True
@@ -135,6 +146,7 @@ async def get_temp_for_date(
 # ---------------------------------------------------------------------------
 # Plotting helpers (source-agnostic)
 # ---------------------------------------------------------------------------
+
 
 def rescale_colormap_def_to_01(cmap):
     """Map the leftmost x-value to 0 and the rightmost to 1, preserving colors."""
@@ -170,8 +182,8 @@ def plot_globe_dataset(data, lat_1d, lon_1d, vmin, vmax, cmap, title):
     plt.colorbar(c, orientation="horizontal", pad=0.05)
     plt.title(title)
     plt.suptitle(
-        f"Created at {datetime.datetime.now()}\n"
-        f"Copyright {datetime.date.today().year} Gary Oberbrunner",
+        f"Created at {datetime.datetime.now(datetime.UTC):%Y-%m-%d %H:%M} UTC\n"
+        f"Copyright {utc_today().year} Gary Oberbrunner",
         fontsize=7,
         y=0.97,
     )
@@ -193,9 +205,10 @@ def save_metadata(metadata, outfile) -> None:
 # Map / texture mode
 # ---------------------------------------------------------------------------
 
+
 async def process_map(source: DataSource, args) -> None:
     if args.days_ago:
-        date = datetime.date.today() - datetime.timedelta(days=args.days_ago)
+        date = utc_today() - datetime.timedelta(days=args.days_ago)
     else:
         date = datetime.date(args.year, args.month, args.day)
     date_str = date.isoformat()
@@ -209,9 +222,7 @@ async def process_map(source: DataSource, args) -> None:
             raise
 
     spec = source.datasets[args.dataset]
-    data = source.get_data_array(
-        raw, args.dataset, ice=args.ice, show=args.show
-    )
+    data = source.get_data_array(raw, args.dataset, ice=args.ice, show=args.show)
     cmap, vmin, vmax = colormap_for(spec)
     title = spec.title_template.format(date=date_str)
 
@@ -260,26 +271,33 @@ async def process_map(source: DataSource, args) -> None:
 # Graph mode (year-overlay line plot)
 # ---------------------------------------------------------------------------
 
-def create_cache_dict() -> DefaultDict[int, DefaultDict[int, DefaultDict[int, float]]]:
+
+def create_cache_dict() -> defaultdict[int, defaultdict[int, defaultdict[int, float]]]:
     return defaultdict(lambda: defaultdict(lambda: defaultdict(float)))
 
 
 async def process_all(source: DataSource, args) -> None:
     async def get_data(dataset_name, session, semaphore, lock):
         start_year = args.start_year
-        end_year = datetime.date.today().year
+        end_year = utc_today().year
         tasks = []
         for year in range(start_year, end_year + 1):
             for mo in range(1, 13):
                 num_days = calendar.monthrange(year, mo)[1]
                 for day in range(1, num_days + 1):
-                    if datetime.date(year, mo, day) > datetime.date.today():
+                    if datetime.date(year, mo, day) > utc_today():
                         continue
                     tasks.append(
                         asyncio.create_task(
                             get_temp_for_date(
-                                source, year, mo, day, dataset_name,
-                                session, semaphore, lock,
+                                source,
+                                year,
+                                mo,
+                                day,
+                                dataset_name,
+                                session,
+                                semaphore,
+                                lock,
                             )
                         )
                     )
@@ -290,7 +308,9 @@ async def process_all(source: DataSource, args) -> None:
                 results[year][mo][day] = val
         return results
 
-    year_cmap = LinearSegmentedColormap.from_list("year_cmap", ["lightgray", "darkblue"])
+    year_cmap = LinearSegmentedColormap.from_list(
+        "year_cmap", ["lightgray", "darkblue"]
+    )
 
     def year_day_to_date(year, day):
         return datetime.date(year, 1, 1) + datetime.timedelta(days=day)
@@ -303,7 +323,7 @@ async def process_all(source: DataSource, args) -> None:
 
     def plot_fig(temps, title, use_ice_mask):
         _, ax = plt.subplots(figsize=(14, 8))
-        years = np.array(sorted(list(temps.keys())))
+        years = np.array(sorted(temps.keys()))
         record = [-10000, (0, 0, 0)]
 
         def years_ago(n):
@@ -313,8 +333,8 @@ async def process_all(source: DataSource, args) -> None:
 
         for year in years:
             x, y = [], []
-            for month in np.array(sorted(list(temps[year].keys()))):
-                for day in np.array(sorted(list(temps[year][month].keys()))):
+            for month in np.array(sorted(temps[year].keys())):
+                for day in np.array(sorted(temps[year][month].keys())):
                     val = temps[year][month][day]
                     if not np.isnan(val):
                         if val > record[0]:
@@ -360,8 +380,8 @@ async def process_all(source: DataSource, args) -> None:
             )
         plt.title(title)
         plt.suptitle(
-            f"Years: {years[0]}-{years[-1]}. Created {datetime.datetime.now()}\n"
-            f"Copyright {datetime.date.today().year} Gary Oberbrunner",
+            f"Years: {years[0]}-{years[-1]}. Created {datetime.datetime.now(datetime.UTC):%Y-%m-%d %H:%M} UTC\n"
+            f"Copyright {utc_today().year} Gary Oberbrunner",
             fontsize=7,
             y=0.97,
         )
@@ -374,7 +394,9 @@ async def process_all(source: DataSource, args) -> None:
         All samples weighted by grid size, 60°N to 60°S{ice_msg}.
         See https://www.ncei.noaa.gov/products/climate-data-records/sea-surface-temperature-optimum-interpolation
         """
-        plt.text(0, 0, msg, ha="left", va="top", transform=plt.gca().transAxes, fontsize=9)
+        plt.text(
+            0, 0, msg, ha="left", va="top", transform=plt.gca().transAxes, fontsize=9
+        )
         plt.tight_layout()
         if args.out:
             plt.savefig(args.out, dpi=dpi)
@@ -401,6 +423,7 @@ async def process_all(source: DataSource, args) -> None:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main(argv=None):
     class CustomFormatter(
         argparse.ArgumentDefaultsHelpFormatter,
@@ -421,29 +444,34 @@ def main(argv=None):
             help="Data source",
         )
         parser.add_argument(
-            "--dataset", "-d",
+            "--dataset",
+            "-d",
             default="anom",
             help="Dataset id within the source (e.g. sst, anom, t2m). "
-                 "Valid values depend on --source.",
+            "Valid values depend on --source.",
         )
         parser.add_argument(
-            "--mode", "-m",
+            "--mode",
+            "-m",
             choices=("graph", "map", "texture"),
             default="graph",
         )
         parser.add_argument(
-            "--show", "-s",
+            "--show",
+            "-s",
             choices=("default", "ice", "land", "area"),
             default="default",
             help="OISST debug overlay (only honored by sources that implement it)",
         )
         parser.add_argument("--ice", "-i", type=bool, help="Mask cells with ice>50%%")
-        parser.add_argument("--year", "-Y", type=int, default=datetime.date.today().year)
-        parser.add_argument("--month", "-M", type=int, default=datetime.date.today().month)
-        parser.add_argument("--day", "-D", type=int, default=datetime.date.today().day)
+        parser.add_argument("--year", "-Y", type=int, default=utc_today().year)
+        parser.add_argument("--month", "-M", type=int, default=utc_today().month)
+        parser.add_argument("--day", "-D", type=int, default=utc_today().day)
         parser.add_argument("--days-ago", type=int, default=0)
         parser.add_argument("--out", "-o", type=pathlib.Path)
-        parser.add_argument("--cache-file", type=pathlib.Path, default="./data-cache.json")
+        parser.add_argument(
+            "--cache-file", type=pathlib.Path, default="./data-cache.json"
+        )
         parser.add_argument("--start-year", type=int, default=1982)
         parser.add_argument("--dpi", type=int, default=150)
         args = parser.parse_args(argv)

@@ -42,13 +42,14 @@ import datetime
 import os
 import re
 import tempfile
+from collections.abc import Iterator
 from contextlib import AbstractContextManager, contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Iterator
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import numpy as np
 
-from .base import DataSource, DatasetSpec
+from .base import DatasetSpec, DataSource
 from .era5 import (
     Era5Source,
     _leap_year_doy,
@@ -59,7 +60,7 @@ from .oisst import DataFetchError
 
 if TYPE_CHECKING:
     import aiohttp
-    import xarray as xr  # noqa: F401
+    import xarray as xr
 
 
 # ---------------------------------------------------------------------------
@@ -104,7 +105,9 @@ def _grib_subset(s3: Any, key: str) -> bytes:
     try:
         idx_body = s3.get_object(Bucket=_S3_BUCKET, Key=key + ".idx")["Body"].read()
     except ClientError as e:
-        raise GfsFetchError(f"GFS index missing: s3://{_S3_BUCKET}/{key}.idx ({e})") from e
+        raise GfsFetchError(
+            f"GFS index missing: s3://{_S3_BUCKET}/{key}.idx ({e})"
+        ) from e
 
     lines = idx_body.decode("utf-8").splitlines()
     for i, line in enumerate(lines):
@@ -119,7 +122,7 @@ def _grib_subset(s3: Any, key: str) -> bytes:
     raise GfsFetchError(f"No 2 m TMP record in s3://{_S3_BUCKET}/{key}.idx")
 
 
-def _read_slice(blob: bytes, tmpdir: Path, fhr: int) -> "xr.Dataset":
+def _read_slice(blob: bytes, tmpdir: Path, fhr: int) -> xr.Dataset:
     """Open a single-record GRIB2 blob with cfgrib and return its dataset."""
     import xarray as xr
 
@@ -127,9 +130,7 @@ def _read_slice(blob: bytes, tmpdir: Path, fhr: int) -> "xr.Dataset":
     grib_path.write_bytes(blob)
     # indexpath="" keeps cfgrib from writing a sibling .idx into the (possibly
     # read-only) data dir; the temp dir is discarded anyway.
-    return xr.open_dataset(
-        grib_path, engine="cfgrib", backend_kwargs={"indexpath": ""}
-    )
+    return xr.open_dataset(grib_path, engine="cfgrib", backend_kwargs={"indexpath": ""})
 
 
 def _build_daily_nc(date: datetime.date, out_path: Path) -> None:
@@ -150,7 +151,7 @@ def _build_daily_nc(date: datetime.date, out_path: Path) -> None:
         for fhr in _FORECAST_HOURS:
             key = f"gfs.{run}/00/atmos/gfs.t00z.pgrb2.0p25.f{fhr:03d}"
             ds = _read_slice(_grib_subset(s3, key), tmpdir, fhr)
-            da = ds["t2m"] if "t2m" in ds else ds[list(ds.data_vars)[0]]
+            da = ds["t2m"] if "t2m" in ds else ds[next(iter(ds.data_vars))]
             slices.append(np.asarray(da.values, dtype=np.float32))
             if lat is None:
                 lat, lon = da["latitude"].values, da["longitude"].values
@@ -259,7 +260,7 @@ class GfsSource(DataSource):
     grid_shape = (720, 1440)  # post-resample, matches OISST masks
     archive_root = Path("./gfs-archive")
 
-    datasets = {
+    datasets: ClassVar[dict[str, DatasetSpec]] = {
         "t2m_mean": _temp_spec("mean", "Mean"),
         "t2m_max": _temp_spec("max", "Max"),
         "t2m_min": _temp_spec("min", "Min"),
@@ -271,7 +272,7 @@ class GfsSource(DataSource):
     # Anomaly dataset → (raw NetCDF variable, ERA5 climatology variable). The
     # mean reuses the existing era5-t2m climatology ("t2m"); max/min need their
     # own climatology files built by scripts/build_era5_climatology.py.
-    _ANOM_INFO: dict[str, tuple[str, str]] = {
+    _ANOM_INFO: ClassVar[dict[str, tuple[str, str]]] = {
         "t2m_mean_anom": ("t2m_mean", "t2m"),
         "t2m_max_anom": ("t2m_max", "t2m_max"),
         "t2m_min_anom": ("t2m_min", "t2m_min"),
@@ -297,7 +298,7 @@ class GfsSource(DataSource):
         date: datetime.date,
         session: aiohttp.ClientSession,  # unused; AWS access is via boto3
         semaphore: Any,
-    ) -> "xr.Dataset":
+    ) -> xr.Dataset:
         """Download + aggregate one date. Returns an in-memory xarray Dataset.
 
         Caches ``gfs-YYYYMMDD.nc`` so re-runs (the daily cron's last-N-days
@@ -317,9 +318,9 @@ class GfsSource(DataSource):
         with xr.open_dataset(out_path) as ds:
             return ds.load()
 
-    def open_local(self, path: Path) -> AbstractContextManager["xr.Dataset"]:
+    def open_local(self, path: Path) -> AbstractContextManager[xr.Dataset]:
         @contextmanager
-        def _opener() -> Iterator["xr.Dataset"]:
+        def _opener() -> Iterator[xr.Dataset]:
             import xarray as xr
 
             with xr.open_dataset(path) as ds:
@@ -327,13 +328,13 @@ class GfsSource(DataSource):
 
         return _opener()
 
-    def latlon_2d(self, raw: "xr.Dataset") -> tuple[np.ndarray, np.ndarray]:
+    def latlon_2d(self, raw: xr.Dataset) -> tuple[np.ndarray, np.ndarray]:
         lon_2d, lat_2d = np.meshgrid(raw["longitude"].values, raw["latitude"].values)
         return lat_2d, lon_2d
 
     def get_data_array(
         self,
-        raw: "xr.Dataset",
+        raw: xr.Dataset,
         dataset_id: str,
         **_kwargs: Any,
     ) -> np.ma.MaskedArray:

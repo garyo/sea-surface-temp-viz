@@ -28,21 +28,31 @@ REGIONS: dict[str, dict] = {
     # Global excludes polar latitudes — preserves the time-series semantics from
     # the pre-Phase-2 pipeline, which used lat_min=-60, lat_max=60 in
     # get_average_temp(). Changing this would shift every historical value.
-    "global":    {"label": "Global (60°S–60°N)",
-                  "bbox": {"lat": (-60, 60), "lon": (0, 360)}},
-    "trop":      {"label": "Tropics (23.5°S–23.5°N)",
-                  "bbox": {"lat": (-23.5, 23.5), "lon": (0, 360)}},
-    "n_hemi":    {"label": "Northern Hemisphere (0–60°N)",
-                  "bbox": {"lat": (0, 60), "lon": (0, 360)}},
-    "s_hemi":    {"label": "Southern Hemisphere (60°S–0)",
-                  "bbox": {"lat": (-60, 0), "lon": (0, 360)}},
-    "nino_3_4":  {"label": "Niño 3.4 (5°S–5°N, 170°W–120°W)",
-                  "bbox": {"lat": (-5, 5), "lon": (190, 240)}},
-    "pacific":   {"label": "Pacific Ocean",   "mask": "pacific.npy"},
-    "atlantic":  {"label": "Atlantic Ocean",  "mask": "atlantic.npy"},
-    "indian":    {"label": "Indian Ocean",    "mask": "indian.npy"},
-    "arctic":    {"label": "Arctic Ocean",    "mask": "arctic.npy"},
-    "antarctic": {"label": "Southern Ocean",  "mask": "antarctic.npy"},
+    "global": {
+        "label": "Global (60°S–60°N)",
+        "bbox": {"lat": (-60, 60), "lon": (0, 360)},
+    },
+    "trop": {
+        "label": "Tropics (23.5°S–23.5°N)",
+        "bbox": {"lat": (-23.5, 23.5), "lon": (0, 360)},
+    },
+    "n_hemi": {
+        "label": "Northern Hemisphere (0–60°N)",
+        "bbox": {"lat": (0, 60), "lon": (0, 360)},
+    },
+    "s_hemi": {
+        "label": "Southern Hemisphere (60°S–0)",
+        "bbox": {"lat": (-60, 0), "lon": (0, 360)},
+    },
+    "nino_3_4": {
+        "label": "Niño 3.4 (5°S–5°N, 170°W–120°W)",
+        "bbox": {"lat": (-5, 5), "lon": (190, 240)},
+    },
+    "pacific": {"label": "Pacific Ocean", "mask": "pacific.npy"},
+    "atlantic": {"label": "Atlantic Ocean", "mask": "atlantic.npy"},
+    "indian": {"label": "Indian Ocean", "mask": "indian.npy"},
+    "arctic": {"label": "Arctic Ocean", "mask": "arctic.npy"},
+    "antarctic": {"label": "Southern Ocean", "mask": "antarctic.npy"},
 }
 
 
@@ -69,9 +79,7 @@ def _load_mask(filename: str) -> np.ndarray:
         )
     mask = np.load(path)
     if mask.shape != GRID_SHAPE:
-        raise ValueError(
-            f"Mask {path} has shape {mask.shape}, expected {GRID_SHAPE}"
-        )
+        raise ValueError(f"Mask {path} has shape {mask.shape}, expected {GRID_SHAPE}")
     _mask_cache[filename] = mask
     return mask
 

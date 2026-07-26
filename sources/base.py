@@ -14,7 +14,7 @@ from abc import ABC, abstractmethod
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 
@@ -59,10 +59,10 @@ class DataSource(ABC):
     methods consume.
     """
 
-    id: str
-    grid_shape: tuple[int, int]
-    datasets: dict[str, DatasetSpec]
-    archive_root: Path  # default location for the local NetCDF archive
+    id: ClassVar[str]
+    grid_shape: ClassVar[tuple[int, int]]
+    datasets: ClassVar[dict[str, DatasetSpec]]
+    archive_root: ClassVar[Path]  # default location for the local NetCDF archive
 
     @staticmethod
     @abstractmethod

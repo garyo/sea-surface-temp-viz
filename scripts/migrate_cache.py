@@ -60,7 +60,9 @@ def migrate(in_path: Path, out_path: Path) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--in", dest="infile", type=Path, default=Path("./sst-data-cache.json"))
+    parser.add_argument(
+        "--in", dest="infile", type=Path, default=Path("./sst-data-cache.json")
+    )
     parser.add_argument("--out", type=Path, default=Path("./data-cache.json"))
     args = parser.parse_args(argv)
     if not args.infile.exists():

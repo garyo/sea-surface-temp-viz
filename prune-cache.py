@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: MIT
 
-import sys
-import json
-import datetime
 import argparse
+import datetime
+import json
 import pathlib
+import sys
 
 
 def parse_cache_date(datestr: str):
@@ -32,7 +32,7 @@ def prune_cache_file(infile: str, outfile: str, days_before_today, sources):
         json_data = json.load(f)
 
     pruned = {}
-    today = datetime.date.today()
+    today = datetime.datetime.now(datetime.UTC).date()
     for key, value in json_data.items():
         src = cache_source(key)
         if src not in sources:
@@ -103,8 +103,8 @@ def main(argv=None):
             "--sources",
             default="oisst",
             help="Comma-separated source ids to prune (default: oisst). "
-                 "Sources not listed here are kept regardless of date — useful "
-                 "when only some sources are re-fetched by the daily cron.",
+            "Sources not listed here are kept regardless of date — useful "
+            "when only some sources are re-fetched by the daily cron.",
         )
         args = parser.parse_args(argv)
 

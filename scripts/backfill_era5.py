@@ -26,7 +26,7 @@ from pathlib import Path
 
 # Allow the sibling sources package to be imported when run as a script.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from sources.era5 import Era5Source, Era5FetchError, _do_cds_retrieve  # noqa: E402
+from sources.era5 import Era5FetchError, Era5Source, _do_cds_retrieve
 
 # ERA5 begins 1940 but we match OISST's start date for cross-source comparability.
 DEFAULT_START = datetime.date(2021, 1, 1)
@@ -40,9 +40,7 @@ def date_range(start: datetime.date, end: datetime.date):
         d += one
 
 
-def download_one(
-    d: datetime.date, archive_root: Path
-) -> tuple[datetime.date, str]:
+def download_one(d: datetime.date, archive_root: Path) -> tuple[datetime.date, str]:
     """Returns (date, status) where status is 'ok', 'skip', or 'fail: <reason>'."""
     out = Era5Source.archive_path(archive_root, d)
     if out.exists() and out.stat().st_size > 0:
@@ -84,13 +82,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--start",
-        type=lambda s: datetime.datetime.strptime(s, "%Y-%m-%d").date(),
+        type=datetime.date.fromisoformat,
         default=DEFAULT_START,
     )
     parser.add_argument(
         "--end",
-        type=lambda s: datetime.datetime.strptime(s, "%Y-%m-%d").date(),
-        default=datetime.date.today() - datetime.timedelta(days=7),
+        type=datetime.date.fromisoformat,
+        default=datetime.datetime.now(datetime.UTC).date() - datetime.timedelta(days=7),
         help="Inclusive end date (default: 7 days before today, past ERA5T latency)",
     )
     parser.add_argument(
@@ -104,9 +102,9 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         default=None,
         help="If given, skip dates already present in this data-cache.json "
-             "(in addition to skipping dates whose NetCDF already exists "
-             "locally). Used by the daily cron to gap-fill missing dates "
-             "without redownloading the entire history.",
+        "(in addition to skipping dates whose NetCDF already exists "
+        "locally). Used by the daily cron to gap-fill missing dates "
+        "without redownloading the entire history.",
     )
     args = parser.parse_args(argv)
 
@@ -148,7 +146,7 @@ def main(argv: list[str] | None = None) -> int:
                 eta = (len(futures) - i) / max(rate, 0.001)
                 print(
                     f"[{i}/{len(futures)}] ok={ok} skip={skip} fail={fail} "
-                    f"({rate:.2f}/s, ETA {eta/60:.1f}m)"
+                    f"({rate:.2f}/s, ETA {eta / 60:.1f}m)"
                 )
 
     print()

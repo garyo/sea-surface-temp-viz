@@ -34,7 +34,7 @@ import numpy as np
 import xarray as xr
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from sources.era5 import Era5Source, _resample_to_oisst_grid  # noqa: E402
+from sources.era5 import Era5Source, _resample_to_oisst_grid
 
 ARCO_ZARR = "gs://gcp-public-data-arco-era5/ar/full_37-1h-0p25deg-chunk-1.zarr-v3"
 
@@ -68,8 +68,9 @@ def build_daily_mean(ds: xr.Dataset, d: datetime.date) -> xr.Dataset:
     path: ``(valid_time=1, latitude, longitude)`` per variable, renamed to
     the short names (``sst``, ``t2m``) the pipeline already consumes.
     """
-    start = datetime.datetime(d.year, d.month, d.day, 0)
-    end = datetime.datetime(d.year, d.month, d.day, 23)
+    # Naive on purpose: the ARCO zarr time index is tz-naive UTC.
+    start = datetime.datetime(d.year, d.month, d.day, 0)  # noqa: DTZ001
+    end = datetime.datetime(d.year, d.month, d.day, 23)  # noqa: DTZ001
     day = ds.sel(time=slice(start, end))
     n = day.sizes["time"]
     if n != 24:
@@ -101,18 +102,16 @@ def write_one(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--archive-root", type=Path, default=Era5Source.archive_root
-    )
+    parser.add_argument("--archive-root", type=Path, default=Era5Source.archive_root)
     parser.add_argument(
         "--start",
-        type=lambda s: datetime.datetime.strptime(s, "%Y-%m-%d").date(),
+        type=datetime.date.fromisoformat,
         default=DEFAULT_START,
     )
     parser.add_argument(
         "--end",
-        type=lambda s: datetime.datetime.strptime(s, "%Y-%m-%d").date(),
-        default=datetime.date.today() - datetime.timedelta(days=7),
+        type=datetime.date.fromisoformat,
+        default=datetime.datetime.now(datetime.UTC).date() - datetime.timedelta(days=7),
         help="Inclusive end date (default: 7 days before today, past ERA5T latency)",
     )
     parser.add_argument(
@@ -139,7 +138,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # Clamp end to ERA5T cutoff so we don't request NaN-filled future slots.
     if era5t_stop:
-        cutoff = datetime.datetime.strptime(era5t_stop, "%Y-%m-%d").date()
+        cutoff = datetime.date.fromisoformat(era5t_stop)
         if args.end > cutoff:
             print(f"  ⚠  clamping end {args.end} → {cutoff} (ERA5T cutoff)")
             args.end = cutoff
@@ -156,9 +155,7 @@ def main(argv: list[str] | None = None) -> int:
     started = time.time()
     ok = skip = fail = 0
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
-        futures = [
-            pool.submit(write_one, d, args.archive_root, ds) for d in dates
-        ]
+        futures = [pool.submit(write_one, d, args.archive_root, ds) for d in dates]
         for i, f in enumerate(as_completed(futures), 1):
             d, status = f.result()
             if status == "ok":
@@ -174,7 +171,7 @@ def main(argv: list[str] | None = None) -> int:
                 eta = (len(futures) - i) / max(rate, 0.001)
                 print(
                     f"[{i}/{len(futures)}] ok={ok} skip={skip} fail={fail} "
-                    f"({rate:.2f}/s, ETA {eta/60:.1f}m)"
+                    f"({rate:.2f}/s, ETA {eta / 60:.1f}m)"
                 )
 
     print()
