@@ -122,6 +122,17 @@ class DataSource(ABC):
             }
         return result
 
+    def is_preliminary(self, raw: Any) -> bool:
+        """True if this file holds provisional data the source will later revise.
+
+        Sources that publish a near-real-time product ahead of the final one
+        (OISST's ``_preliminary`` files, ERA5T) override this so the pipeline can
+        flag those dates; the frontend draws them as a dotted line. Detection
+        must read the file itself, not its local filename — the backfill scripts
+        normalize provisional downloads to the final name.
+        """
+        return False
+
     def equirect_filenames(self, dataset_id: str, date_str: str) -> list[str]:
         """Filenames to write for an equirect texture.
 

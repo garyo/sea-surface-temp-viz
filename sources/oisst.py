@@ -139,6 +139,19 @@ class OisstSource(DataSource):
 
         return _opener()
 
+    def is_preliminary(self, raw: h5py.File) -> bool:
+        """NOAA publishes ``_preliminary`` files for ~2 weeks, then revises them.
+
+        The ``id`` attribute holds the *original* filename, so this stays correct
+        for archived copies (backfill_oisst.py saves preliminary downloads under
+        the final name). The ``title`` attribute also distinguishes the two but is
+        stored truncated mid-word ("… Version 2.1 - Inter"), so it's unusable.
+        """
+        file_id = raw.attrs.get("id", b"")
+        if isinstance(file_id, bytes):
+            file_id = file_id.decode()
+        return str(file_id).endswith("_preliminary.nc")
+
     def latlon_2d(self, raw: h5py.File) -> tuple[np.ndarray, np.ndarray]:
         lat = raw["lat"][:]
         lon = raw["lon"][:]

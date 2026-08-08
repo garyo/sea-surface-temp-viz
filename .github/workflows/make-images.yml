@@ -2,6 +2,15 @@ name: Create Images and Make Release
 
 on:
   workflow_dispatch:
+    inputs:
+      extra_texture_days:
+        description: >-
+          Extra --days-ago values to render textures for, space-separated
+          (e.g. "9 10 11 12 13 14 15 16"). One-off backfill for days whose
+          textures were rendered from OISST preliminary data before
+          newly_finalized.py existed; the nightly run needs no input.
+        required: false
+        default: ''
   schedule:
     # Data is updated at 9am EDT = 13:00 hrs UTC, so run just after that
     # min hr dom mo dow
@@ -45,6 +54,10 @@ jobs:
 
     - name: Generate graphs
       run: |
+        # Snapshot which days are still preliminary *before* the prune drops
+        # those flags; the texture step diffs against this to find the days that
+        # finalized during this run.
+        uv run scripts/newly_finalized.py --snapshot-out /tmp/prelim-before.json
         uv run prune-cache.py --inplace --days 90 # Re-fetch most recent 90 days, in case of reanalysis
         mkdir -p ./output
         uv run pipeline.py --source oisst --mode graph --dataset sst --out ./output/sst-all.png
@@ -61,11 +74,25 @@ jobs:
 
     # This generates textures (.webp) and associated colormap json files (-metadata.json)
     # Generate for the last 7 days to build up a time series (and catch any missed days)
+    #
+    # Those 7 days are all still preliminary — NOAA finalizes OISST at ~D+14 —
+    # so we also re-render whichever days flipped to final during this run, or
+    # every published texture would keep the provisional imagery it was first
+    # rendered from. In steady state that's one extra day per night.
+    #
+    # MANUAL_DAYS comes from the workflow_dispatch input and is only for the
+    # one-off backfill of days rendered before that mechanism existed. It goes
+    # through `env:` rather than a `${{ }}` interpolation so the value can't
+    # inject shell; only integers survive the filter below.
     - name: Generate map textures
+      env:
+        MANUAL_DAYS: ${{ inputs.extra_texture_days }}
       run: |
         rm -rf ./maps
         mkdir -p ./maps
-        for days_ago in 2 3 4 5 6 7 8; do
+        MANUAL_DAYS=$(printf '%s' "$MANUAL_DAYS" | tr -cs '0-9' '\n')
+        EXTRA_DAYS=$(uv run scripts/newly_finalized.py --snapshot-in /tmp/prelim-before.json)
+        for days_ago in $(printf '%s\n' 2 3 4 5 6 7 8 $EXTRA_DAYS $MANUAL_DAYS | sort -n -u); do
           echo "Generating textures for $days_ago days ago..."
           uv run pipeline.py --source oisst --mode texture --dataset sst --days-ago $days_ago --out ./maps || true
           uv run pipeline.py --source oisst --mode texture --dataset anom --days-ago $days_ago --out ./maps || true

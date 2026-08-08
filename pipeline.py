@@ -75,6 +75,18 @@ def cache_key(
     return f"{year:04}-{mo:02}-{day:02}-{source}-{dataset}-{region}"
 
 
+def preliminary_key(year: int, mo: int, day: int, source: str) -> str:
+    """Key marking a date whose source file was provisional and will be revised.
+
+    Deliberately shaped like a regular cache key with a reserved dataset
+    (``preliminary``) and reserved region (``flag``) so it rides the existing
+    machinery: prune-cache.py still reads ``oisst`` out of it, so the nightly
+    90-day prune drops these along with the values and the re-fetch re-writes
+    only the still-provisional ones. Absence of the key means final.
+    """
+    return f"{year:04}-{mo:02}-{day:02}-{source}-preliminary-flag"
+
+
 def save_cache() -> None:
     json_data = json.dumps(temps_cache, sort_keys=True, indent=2, cls=NumpyArrayEncoder)
     with open(temps_cache_file, "w") as f:
@@ -130,6 +142,8 @@ async def get_temp_for_date(
                 temps_cache[cache_key(year, mo, day, source.id, ds_name, region_id)] = (
                     val
                 )
+        if source.is_preliminary(raw):
+            temps_cache[preliminary_key(year, mo, day, source.id)] = 1.0
         t = temps_cache[cache_key(year, mo, day, source.id, dataset_name, region)]
         print(f"Computed {dataset_name} {year}-{mo:02}-{day:02} ({region}): {t:.4f}°C")
         do_save = True

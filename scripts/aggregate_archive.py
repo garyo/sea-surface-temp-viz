@@ -77,6 +77,8 @@ def aggregate_one(
 
     out: dict[str, float] = {}
     with source.open_local(nc_path) as raw:
+        if source.is_preliminary(raw):
+            out[f"{date_str}-{source.id}-preliminary-flag"] = 1.0
         lat_2d, lon_2d = source.latlon_2d(raw)
         for ds_id in source.datasets:
             data = source.get_data_array(raw, ds_id)

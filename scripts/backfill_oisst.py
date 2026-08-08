@@ -70,11 +70,11 @@ def urls_for(d: datetime.date) -> list[str]:
 
 
 def download_one(
-    d: datetime.date, archive_root: Path, retries: int = 3
+    d: datetime.date, archive_root: Path, retries: int = 3, force: bool = False
 ) -> tuple[datetime.date, str]:
     """Returns (date, status) where status is 'ok', 'skip', or 'fail: <reason>'."""
     out = file_path(archive_root, d)
-    if out.exists() and out.stat().st_size > 0:
+    if not force and out.exists() and out.stat().st_size > 0:
         return (d, "skip")
     out.parent.mkdir(parents=True, exist_ok=True)
 
@@ -115,6 +115,14 @@ def main(argv: list[str] | None = None) -> int:
         help="Inclusive end date (default: 2 days before today)",
     )
     parser.add_argument("--workers", type=int, default=8)
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Re-download dates already present. Needed to upgrade a day that "
+        "was archived while NOAA still only had the _preliminary file — both "
+        "URLs save under the same final filename, so it would otherwise be "
+        "skipped forever.",
+    )
     args = parser.parse_args(argv)
 
     args.archive_root.mkdir(parents=True, exist_ok=True)
@@ -127,7 +135,10 @@ def main(argv: list[str] | None = None) -> int:
     started = time.time()
     ok = skip = fail = 0
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
-        futures = [pool.submit(download_one, d, args.archive_root) for d in dates]
+        futures = [
+            pool.submit(download_one, d, args.archive_root, force=args.force)
+            for d in dates
+        ]
         for i, f in enumerate(as_completed(futures), 1):
             d, status = f.result()
             if status == "ok":

@@ -18,11 +18,18 @@ smaller than array-of-objects, ECharts consumes natively):
           "datasets": {
             "sst":  { "dates": ["1982-01-01", ...], "values": [26.81, ...] },
             "anom": { "dates": [...],               "values": [...] }
-          }
+          },
+          "preliminary_from": "2026-08-01"
         }
       },
       "updated": "..."
     }
+
+``preliminary_from`` is optional and present only when the source's most recent
+days are still provisional (NOAA publishes OISST ``_preliminary`` files for ~2
+weeks before revising them). Every date at or after it is subject to revision;
+the frontend draws that tail as a dotted line. It is derived from the
+``{date}-{source}-preliminary-flag`` cache keys written by pipeline.py.
 """
 
 from __future__ import annotations
@@ -44,6 +51,18 @@ import regions
 # greedy match for source still stops at the first `-`).
 KEY_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})-([a-z0-9]+)-([a-z0-9_]+)-([a-z0-9_]+)$")
 
+# Reserved (dataset, region) pair that pipeline.py's preliminary_key() uses to
+# mark a date whose source file was provisional. Neither is a real dataset or
+# region, so these keys are pulled out before grouping.
+PRELIM_DATASET = "preliminary"
+PRELIM_REGION = "flag"
+
+# Only trust a preliminary flag this close to the series' latest date. The daily
+# workflow prunes and re-fetches the last 90 days, so any flag inside that window
+# reflects the current upstream state; an older one is a stale leftover and would
+# otherwise dot months of settled data.
+PRELIM_MAX_AGE_DAYS = 90
+
 
 def load_cache(path: Path) -> dict[str, float]:
     with path.open("r") as f:
@@ -52,11 +71,18 @@ def load_cache(path: Path) -> dict[str, float]:
 
 def group_cache(
     cache: dict[str, float],
-) -> dict[str, dict[str, dict[str, list[tuple[str, float]]]]]:
-    """Group entries by region → source → dataset → [(date, value), ...]."""
+) -> tuple[
+    dict[str, dict[str, dict[str, list[tuple[str, float]]]]],
+    dict[str, set[str]],
+]:
+    """Group entries by region → source → dataset → [(date, value), ...].
+
+    Also returns the preliminary flags as source → {date, ...}.
+    """
     grouped: dict[str, dict[str, dict[str, list[tuple[str, float]]]]] = defaultdict(
         lambda: defaultdict(lambda: defaultdict(list))
     )
+    prelim: dict[str, set[str]] = defaultdict(set)
     skipped = 0
     for key, value in cache.items():
         m = KEY_RE.match(key)
@@ -64,6 +90,9 @@ def group_cache(
             skipped += 1
             continue
         date, source, dataset, region = m.groups()
+        if dataset == PRELIM_DATASET and region == PRELIM_REGION:
+            prelim[source].add(date)
+            continue
         if isinstance(value, float) and math.isnan(value):
             continue
         grouped[region][source][dataset].append((date, value))
@@ -74,14 +103,36 @@ def group_cache(
         for s in r.values():
             for entries in s.values():
                 entries.sort(key=lambda kv: kv[0])
-    return grouped
+    return grouped, prelim
+
+
+def preliminary_from(
+    datasets: dict[str, list[tuple[str, float]]],
+    flagged: set[str],
+) -> str | None:
+    """Earliest still-provisional date for one source, or None.
+
+    Preliminary days are always a trailing run, so one date is enough to describe
+    them — far cheaper than a boolean parallel to every value.
+    """
+    latest = max(
+        (entries[-1][0] for entries in datasets.values() if entries), default=None
+    )
+    if latest is None:
+        return None
+    cutoff = (
+        date.fromisoformat(latest) - timedelta(days=PRELIM_MAX_AGE_DAYS)
+    ).isoformat()
+    recent = [d for d in flagged if d >= cutoff]
+    return min(recent) if recent else None
 
 
 def build_payload(
     region_id: str,
     sources: dict[str, dict[str, list[tuple[str, float]]]],
+    prelim: dict[str, set[str]],
 ) -> dict[str, Any]:
-    sources_out: dict[str, dict[str, dict[str, dict[str, list]]]] = {}
+    sources_out: dict[str, dict[str, Any]] = {}
     for source_id, datasets in sources.items():
         ds_out: dict[str, dict[str, list]] = {}
         for ds_name, entries in datasets.items():
@@ -90,6 +141,9 @@ def build_payload(
                 "values": [v for _, v in entries],
             }
         sources_out[source_id] = {"datasets": ds_out}
+        first_prelim = preliminary_from(datasets, prelim.get(source_id, set()))
+        if first_prelim:
+            sources_out[source_id]["preliminary_from"] = first_prelim
     label = regions.label_for(region_id) if region_id in regions.REGIONS else region_id
     return {
         "region": region_id,
@@ -177,7 +231,7 @@ def main(argv: list[str] | None = None) -> int:
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
     cache = load_cache(args.cache_file)
-    grouped = group_cache(cache)
+    grouped, prelim = group_cache(cache)
 
     if not grouped:
         print("⚠️  No regions found in cache; nothing to write")
@@ -205,7 +259,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             continue
 
-        payload = build_payload(region_id, sources)
+        payload = build_payload(region_id, sources, prelim)
         out_path = args.out_dir / f"{region_id}.json"
         with out_path.open("w") as f:
             json.dump(payload, f, separators=(",", ":"))
