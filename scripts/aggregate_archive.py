@@ -1,11 +1,11 @@
 #!/usr/bin/env -S uv run --script
 # SPDX-License-Identifier: MIT
-"""Compute regional aggregates from a local source archive into data-cache.json.
+"""Compute regional aggregates from a local source archive into data-cache.json.gz.
 
 Walks ``./<archive-root>/YYYY/*.<ext>`` (created by the per-source backfill
 scripts) and, for each file, computes cosine-weighted aggregates for every
 region defined in ``regions.py`` for every dataset the source exposes, then
-writes them to ``data-cache.json`` under keys
+writes them to ``data-cache.json.gz`` under keys
 ``YYYY-MM-DD-{source}-{dataset}-{region}``.
 
 Already-cached entries are not recomputed. Resumable: interrupt with Ctrl-C
@@ -20,7 +20,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -29,6 +28,7 @@ from pathlib import Path
 
 # Allow the sibling regions.py / sources package to be imported when run as a script.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import cache_io
 import regions
 from sources import SOURCES
 
@@ -108,15 +108,7 @@ def all_keys_present(
 def load_cache(path: Path) -> dict[str, float]:
     if not path.exists():
         return {}
-    with path.open("r") as f:
-        return json.load(f)
-
-
-def save_cache(path: Path, cache: dict[str, float]) -> None:
-    tmp = path.with_suffix(path.suffix + ".part")
-    with tmp.open("w") as f:
-        json.dump(cache, f, sort_keys=True, indent=2)
-    tmp.replace(path)
+    return cache_io.load_cache(path)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -128,7 +120,7 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Local NetCDF archive (default: source-specific, e.g. ./netcdf-archive for oisst)",
     )
-    parser.add_argument("--cache-file", type=Path, default=Path("./data-cache.json"))
+    parser.add_argument("--cache-file", type=Path, default=Path("./data-cache.json.gz"))
     parser.add_argument(
         "--workers",
         type=int,
@@ -139,7 +131,7 @@ def main(argv: list[str] | None = None) -> int:
         "--flush-every",
         type=int,
         default=50,
-        help="Save data-cache.json every N processed files",
+        help="Save the cache every N processed files",
     )
     parser.add_argument(
         "--regions",
@@ -219,7 +211,7 @@ def main(argv: list[str] | None = None) -> int:
             cache.update(entries)
             n_done += 1
             if n_done % args.flush_every == 0:
-                save_cache(args.cache_file, cache)
+                cache_io.save_cache(args.cache_file, cache)
             if n_done % 100 == 0 or n_done == len(todo):
                 elapsed = time.time() - started
                 rate = n_done / max(elapsed, 1)
@@ -229,7 +221,7 @@ def main(argv: list[str] | None = None) -> int:
                     f"({rate:.1f}/s, ETA {eta / 60:.1f}m)"
                 )
 
-    save_cache(args.cache_file, cache)
+    cache_io.save_cache(args.cache_file, cache)
     print(f"Wrote {args.cache_file} ({len(cache)} entries)")
     return 0
 

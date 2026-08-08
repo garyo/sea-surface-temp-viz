@@ -12,3 +12,6 @@ era5-archive/
 logs/
 .venv/
 gfs-archive/
+
+# Atomic-write temp files from cache_io.save_cache
+*.part

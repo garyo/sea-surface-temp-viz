@@ -29,20 +29,23 @@ import json
 import sys
 from pathlib import Path
 
+# Allow the sibling cache_io.py to be imported when run as a script.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import cache_io
+
 FLAG_SUFFIX = "-preliminary-flag"
 
 
 def flagged_dates(cache_path: Path, source: str) -> set[str]:
     """Dates currently marked preliminary for ``source``."""
-    with cache_path.open("r") as f:
-        cache = json.load(f)
+    cache = cache_io.load_cache(cache_path)
     suffix = f"-{source}{FLAG_SUFFIX}"
     return {k[:10] for k in cache if k.endswith(suffix)}
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--cache-file", type=Path, default=Path("./data-cache.json"))
+    parser.add_argument("--cache-file", type=Path, default=Path("./data-cache.json.gz"))
     parser.add_argument("--source", default="oisst")
     parser.add_argument(
         "--snapshot-out",

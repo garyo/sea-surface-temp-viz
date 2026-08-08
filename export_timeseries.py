@@ -1,6 +1,6 @@
 #!/usr/bin/env -S uv run --script
 # SPDX-License-Identifier: MIT
-"""Export aggregated time-series from data-cache.json to one JSON per region.
+"""Export aggregated time-series from data-cache.json.gz to one JSON per region.
 
 Reads the on-disk cache populated by pipeline.py — keys are
 ``YYYY-MM-DD-{source}-{dataset}-{region}`` — and emits
@@ -44,6 +44,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import cache_io
 import regions
 
 # Matches keys like 1982-01-01-oisst-sst-nino_3_4 or 2026-01-15-era5-sst_anom-n_hemi.
@@ -64,9 +65,7 @@ PRELIM_REGION = "flag"
 PRELIM_MAX_AGE_DAYS = 90
 
 
-def load_cache(path: Path) -> dict[str, float]:
-    with path.open("r") as f:
-        return json.load(f)
+load_cache = cache_io.load_cache
 
 
 def group_cache(
@@ -200,7 +199,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--cache-file",
         type=Path,
-        default=Path("./data-cache.json"),
+        default=Path("./data-cache.json.gz"),
         help="Input cache file produced by pipeline.py",
     )
     parser.add_argument(

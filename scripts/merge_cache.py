@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 """Merge the S3-persisted data cache onto the committed one.
 
-The committed ``data-cache.json`` is the authority for historical dates (it is
+The committed ``data-cache.json.gz`` is the authority for historical dates (it is
 hand-curated by deliberate backfill commits and frozen well in the past). The
 S3 cache is what CI accumulates run-to-run for *recent* dates, which are never
 committed back. We want, for every key:
@@ -19,27 +19,27 @@ cache, and we simply keep the committed one.
 
 Usage (in CI, after `aws s3 cp ... /tmp/s3-cache.json`):
     uv run scripts/merge_cache.py \
-        --committed ./data-cache.json \
+        --committed ./data-cache.json.gz \
         --s3 /tmp/s3-cache.json \
-        --out ./data-cache.json
+        --out ./data-cache.json.gz
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
+# Allow the sibling cache_io.py to be imported when run as a script.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import cache_io
 
-def load(path: Path) -> dict[str, float]:
-    with path.open("r") as f:
-        return json.load(f)
+load = cache_io.load_cache
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--committed", type=Path, default=Path("./data-cache.json"))
+    parser.add_argument("--committed", type=Path, default=Path("./data-cache.json.gz"))
     parser.add_argument(
         "--s3",
         type=Path,
@@ -63,8 +63,7 @@ def main(argv: list[str] | None = None) -> int:
             f"({len(committed)} entries) unchanged."
         )
         if out != args.committed:
-            with out.open("w") as f:
-                json.dump(committed, f, sort_keys=True, indent=1)
+            cache_io.save_cache(out, committed)
         return 0
 
     s3 = load(args.s3)
@@ -75,8 +74,7 @@ def main(argv: list[str] | None = None) -> int:
         f"Merged S3 cache: committed={len(committed)}, s3={len(s3)}, "
         f"merged={len(merged)} (+{added} recent keys from S3)"
     )
-    with out.open("w") as f:
-        json.dump(merged, f, sort_keys=True, indent=1)
+    cache_io.save_cache(out, merged)
     return 0
 
 

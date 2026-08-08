@@ -31,6 +31,7 @@ import numpy as np
 import urllib3
 from matplotlib.colors import LinearSegmentedColormap
 
+import cache_io
 from sources import SOURCES, DataSource
 from sources.base import DatasetSpec
 from sources.oisst import DataFetchError
@@ -45,22 +46,13 @@ def rescale(x, oldmin, oldmax, newmin, newmax):
     return ((x - oldmin) / (oldmax - oldmin)) * (newmax - newmin) + newmin
 
 
-class NumpyArrayEncoder(json.JSONEncoder):
-    def default(self, o):
-        if isinstance(o, np.ndarray):
-            return o.tolist()
-        if type(o) is np.float32:
-            return o.item()
-        return json.JSONEncoder.default(self, o)
-
-
 # ---------------------------------------------------------------------------
 # Disk cache. Key shape: ``YYYY-MM-DD-{source}-{dataset}-{region}``.
 # scripts/migrate_cache.py produced this layout from the legacy schema; both
 # pipeline.py and export_timeseries.py treat the cache as the source of truth.
 # ---------------------------------------------------------------------------
 
-temps_cache_file: str = "./data-cache.json"
+temps_cache_file: str = "./data-cache.json.gz"
 temps_cache: dict = {}
 
 
@@ -88,9 +80,7 @@ def preliminary_key(year: int, mo: int, day: int, source: str) -> str:
 
 
 def save_cache() -> None:
-    json_data = json.dumps(temps_cache, sort_keys=True, indent=2, cls=NumpyArrayEncoder)
-    with open(temps_cache_file, "w") as f:
-        f.write(json_data)
+    cache_io.save_cache(pathlib.Path(temps_cache_file), temps_cache)
 
 
 def load_cache(path) -> None:
@@ -98,8 +88,7 @@ def load_cache(path) -> None:
     global temps_cache
     temps_cache_file = str(path)
     try:
-        with open(temps_cache_file, "r") as f:
-            temps_cache = json.load(f)
+        temps_cache = cache_io.load_cache(pathlib.Path(temps_cache_file))
     except OSError:
         temps_cache = {}
 
@@ -484,7 +473,7 @@ def main(argv=None):
         parser.add_argument("--days-ago", type=int, default=0)
         parser.add_argument("--out", "-o", type=pathlib.Path)
         parser.add_argument(
-            "--cache-file", type=pathlib.Path, default="./data-cache.json"
+            "--cache-file", type=pathlib.Path, default="./data-cache.json.gz"
         )
         parser.add_argument("--start-year", type=int, default=1982)
         parser.add_argument("--dpi", type=int, default=150)

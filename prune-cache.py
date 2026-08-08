@@ -2,9 +2,10 @@
 
 import argparse
 import datetime
-import json
 import pathlib
 import sys
+
+import cache_io
 
 
 def parse_cache_date(datestr: str):
@@ -28,8 +29,7 @@ def prune_cache_file(infile: str, outfile: str, days_before_today, sources):
     daily workflow only re-fetches the listed sources, so pruning the others
     just creates gaps that never get filled back in.
     """
-    with open(infile, "r") as f:
-        json_data = json.load(f)
+    json_data = cache_io.load_cache(pathlib.Path(infile))
 
     pruned = {}
     today = datetime.datetime.now(datetime.UTC).date()
@@ -44,12 +44,11 @@ def prune_cache_file(infile: str, outfile: str, days_before_today, sources):
         if delta > days_before_today:
             pruned[key] = value
 
-    with open(outfile, "w") as dstf:
-        json.dump(pruned, dstf, indent=1, sort_keys=True)
+    cache_io.save_cache(pathlib.Path(outfile), pruned)
 
 
 def main(argv=None):
-    pruned_file = "./sst-data-cache-pruned.json"
+    pruned_file = "./sst-data-cache-pruned.json.gz"
 
     class CustomFormatter(
         argparse.ArgumentDefaultsHelpFormatter,
@@ -96,7 +95,7 @@ def main(argv=None):
             "-i",
             type=pathlib.Path,
             dest="infile",  # needed since "in" is a keyword
-            default="./data-cache.json",
+            default="./data-cache.json.gz",
             help="""Input cache file""",
         )
         parser.add_argument(
