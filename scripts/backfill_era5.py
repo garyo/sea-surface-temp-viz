@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import argparse
 import datetime
-import json
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -26,6 +25,7 @@ from pathlib import Path
 
 # Allow the sibling sources package to be imported when run as a script.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import cache_io
 from sources.era5 import Era5FetchError, Era5Source, _do_cds_retrieve
 
 # ERA5 begins 1940 but we match OISST's start date for cross-source comparability.
@@ -60,8 +60,7 @@ def cached_era5_dates(cache_file: Path) -> set[str]:
     aggregated, so the ephemeral CI archive doesn't re-pull every historical
     day on every run.
     """
-    with cache_file.open() as f:
-        cache = json.load(f)
+    cache = cache_io.load_cache(cache_file)
     out: set[str] = set()
     for key in cache:
         # Key shape: YYYY-MM-DD-era5-sst-global (and others). One probe per
@@ -101,7 +100,7 @@ def main(argv: list[str] | None = None) -> int:
         "--cache-file",
         type=Path,
         default=None,
-        help="If given, skip dates already present in this data-cache.json "
+        help="If given, skip dates already present in this cache file "
         "(in addition to skipping dates whose NetCDF already exists "
         "locally). Used by the daily cron to gap-fill missing dates "
         "without redownloading the entire history.",

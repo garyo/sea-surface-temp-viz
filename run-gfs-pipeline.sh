@@ -48,19 +48,22 @@ mkdir -p "$CLIM_DIR" ./maps/timeseries
 trap 'kill $(jobs -p) 2>/dev/null || true' EXIT
 
 echo "### Restore + merge data cache (so export_timeseries keeps OISST/ERA5 series) ###"
-if aws s3 cp "$S3/data-cache.json" /tmp/gfs-s3-cache.json 2>/dev/null; then
+if aws s3 cp "$S3/data-cache.json.gz" /tmp/gfs-s3-cache.json.gz 2>/dev/null; then
   uv run python - <<'PY'
-import json, pathlib
-loc = pathlib.Path("data-cache.json")
-L = json.loads(loc.read_text()) if loc.exists() else {}
-S = json.loads(pathlib.Path("/tmp/gfs-s3-cache.json").read_text())
+import pathlib, cache_io
+loc = pathlib.Path("data-cache.json.gz")
+L = cache_io.load_cache(loc) if loc.exists() else {}
+S = cache_io.load_cache(pathlib.Path("/tmp/gfs-s3-cache.json.gz"))
 # S3 wins on overlap (freshest OISST/ERA5); local-only keys (our GFS) preserved.
+# Note this is the opposite precedence from scripts/merge_cache.py, which is
+# for CI where the committed file is the curated authority. Here the local file
+# is scratch work in progress, so don't "unify" the two.
 merged = {**L, **S}
-loc.write_text(json.dumps(merged, sort_keys=True))
+cache_io.save_cache(loc, merged)
 print(f"  merged cache: {len(L)} local + {len(S)} s3 -> {len(merged)} entries")
 PY
 else
-  echo "  (no S3 cache found; using local data-cache.json if present)"
+  echo "  (no S3 cache found; using local data-cache.json.gz if present)"
 fi
 
 echo
@@ -87,7 +90,7 @@ else
 fi
 
 uv run scripts/backfill_gfs.py --start "$START" \
-  --out ./maps --cache-file ./data-cache.json & PID_GFS=$!
+  --out ./maps --cache-file ./data-cache.json.gz & PID_GFS=$!
 
 FAIL=0
 [ -n "$PID_ERA5" ] && { wait $PID_ERA5 || { echo "❌ ERA5 re-render failed"; FAIL=1; }; }
@@ -99,7 +102,7 @@ wait $PID_GFS  || { echo "❌ GFS backfill (temps) failed"; FAIL=1; }
 echo
 echo "### Stage 2 (serial): GFS max/min anomalies (.nc cached → fast) ###"
 uv run scripts/backfill_gfs.py --start "$START" \
-  --out ./maps --cache-file ./data-cache.json \
+  --out ./maps --cache-file ./data-cache.json.gz \
   --datasets t2m_max_anom,t2m_min_anom
 
 echo
@@ -107,7 +110,7 @@ echo "### Stage 3 (serial): export series + publish ###"
 uv run export_timeseries.py --out-dir ./maps/timeseries
 aws s3 cp "$CLIM_MAX" "$S3/climatology/"
 aws s3 cp "$CLIM_MIN" "$S3/climatology/"
-aws s3 cp ./data-cache.json "$S3/data-cache.json" --cache-control "no-store"
+aws s3 cp ./data-cache.json.gz "$S3/data-cache.json.gz" --cache-control "no-store"
 uv run ./upload-to-s3.py --maps-dir ./maps
 
 echo

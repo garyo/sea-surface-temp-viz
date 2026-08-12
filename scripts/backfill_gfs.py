@@ -13,7 +13,7 @@ data isn't local — each day is assembled from eight 3-hourly 2 m-TMP slices on
 2. **Render + aggregate (serial).** For each cached day, write the
    ``<date>-gfs-<dataset>-equirect.webp`` + ``-metadata.json`` textures (into
    ``./maps``, matching CI) *and* fold area-weighted region means into
-   ``data-cache.json`` (the same cache export_timeseries.py reads), from one
+   ``data-cache.json.gz`` (the same cache export_timeseries.py reads), from one
    ``get_data_array`` call. matplotlib isn't thread-safe, so this phase is
    serial.
 
@@ -43,6 +43,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import cache_io
 import regions
 from pipeline import cache_key, colormap_for
 from sources.era5 import Era5Source
@@ -208,20 +209,14 @@ def render_aggregate_phase(
             print(f"  ❌ {date_str}: {type(e).__name__}: {e}")
 
         if ok and ok % save_every == 0:
-            _save_cache(cache, cache_path)
+            cache_io.save_cache(cache_path, cache)
         if i % 50 == 0 or i == len(dates):
             el = time.time() - started
             rate = i / max(el, 1)
             print(f"[{i}/{len(dates)}] ok={ok} fail={fail} ({rate:.1f}/s)")
 
-    _save_cache(cache, cache_path)
+    cache_io.save_cache(cache_path, cache)
     return ok, fail
-
-
-def _save_cache(cache: dict[str, float], path: Path) -> None:
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(cache, sort_keys=True))
-    tmp.replace(path)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -234,7 +229,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     p.add_argument("--archive-root", type=Path, default=GfsSource.archive_root)
     p.add_argument("--out", type=Path, default=Path("./maps"))
-    p.add_argument("--cache-file", type=Path, default=Path("./data-cache.json"))
+    p.add_argument("--cache-file", type=Path, default=Path("./data-cache.json.gz"))
     p.add_argument(
         "--workers", type=int, default=8, help="Parallel AWS day-builds (network-bound)"
     )
@@ -242,7 +237,7 @@ def main(argv: list[str] | None = None) -> int:
         "--save-every",
         type=int,
         default=25,
-        help="Flush data-cache.json every N rendered days",
+        help="Flush the cache every N rendered days",
     )
     p.add_argument(
         "--datasets",
@@ -281,7 +276,7 @@ def main(argv: list[str] | None = None) -> int:
     args.out.mkdir(parents=True, exist_ok=True)
     cache: dict[str, float] = {}
     if args.cache_file.exists():
-        cache = json.loads(args.cache_file.read_text())
+        cache = cache_io.load_cache(args.cache_file)
 
     print(f"GFS backfill {args.start} → {args.end} ({len(dates)} days)")
     print(f"Datasets: {dataset_ids}")
