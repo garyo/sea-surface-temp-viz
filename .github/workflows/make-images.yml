@@ -44,23 +44,14 @@ jobs:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       run: |
-        # The S3 object moved to .gz along with the committed cache. Fall back to
-        # the old plain object for the first run after that change — dropping the
-        # recent tail would lose ERA5/GFS dates that are never committed. The
-        # fallback can go once a .gz object exists in the bucket.
-        S3_BASE=s3://climate-change-assets/sea-surface-temp
-        if aws s3 cp "$S3_BASE/data-cache.json.gz" /tmp/s3-data-cache.json.gz; then
-          S3_CACHE=/tmp/s3-data-cache.json.gz
-        elif aws s3 cp "$S3_BASE/data-cache.json" /tmp/s3-data-cache.json; then
-          echo "Using the pre-gzip S3 cache; this run republishes it as .gz."
-          S3_CACHE=/tmp/s3-data-cache.json
-        else
-          echo "No S3 cache yet (first run); using committed cache."
-          S3_CACHE=/tmp/s3-data-cache-absent.json
-        fi
+        # A missing object is not an error: merge_cache.py falls back to the
+        # committed cache, and the run republishes one at the end.
+        aws s3 cp \
+          s3://climate-change-assets/sea-surface-temp/data-cache.json.gz \
+          /tmp/s3-data-cache.json.gz || echo "No S3 cache; using committed cache."
         uv run scripts/merge_cache.py \
           --committed ./data-cache.json.gz \
-          --s3 "$S3_CACHE" \
+          --s3 /tmp/s3-data-cache.json.gz \
           --out ./data-cache.json.gz
 
     - name: Generate graphs
