@@ -256,6 +256,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.end < args.start:
         print("❌ --end must be >= --start", file=sys.stderr)
         return 2
+    if not args.cache_file.exists():
+        p.error(f"--cache-file {args.cache_file} does not exist")
 
     source = GfsSource()
     unknown = [d for d in (args.datasets or []) if d not in source.datasets]
@@ -274,9 +276,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Skipping {before - len(dates)} dates already on S3")
 
     args.out.mkdir(parents=True, exist_ok=True)
-    cache: dict[str, float] = {}
-    if args.cache_file.exists():
-        cache = cache_io.load_cache(args.cache_file)
+    cache = cache_io.load_cache(args.cache_file)
 
     print(f"GFS backfill {args.start} → {args.end} ({len(dates)} days)")
     print(f"Datasets: {dataset_ids}")

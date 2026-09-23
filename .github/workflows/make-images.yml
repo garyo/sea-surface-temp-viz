@@ -169,7 +169,7 @@ jobs:
         uv run scripts/backfill_era5.py \
           --start "$(date -u -d '90 days ago' +%Y-%m-%d)" \
           --end "$(date -u -d '1 day ago' +%Y-%m-%d)" \
-          --cache-file ./data-cache.json \
+          --cache-file ./data-cache.json.gz \
           --workers 4 || true
         # Texture gap-fill: the day-by-day loop only renders the 1–10 day
         # window, but the step above just pulled NetCDFs up to 90 days back
@@ -188,8 +188,8 @@ jobs:
           --no-skip-existing-on-s3 \
           --out ./maps || true
         # The texture step downloaded daily NetCDFs into era5-archive/.
-        # Aggregate them into data-cache.json so export_timeseries below picks
-        # up today's ERA5 values. (data-cache.json is not committed back from
+        # Aggregate them into data-cache.json.gz so export_timeseries below picks
+        # up today's ERA5 values. (The cache is not committed back from
         # CI — historical ERA5 entries come from the committed backfill.)
         uv run scripts/aggregate_archive.py --source era5 --workers 2 || true
 
@@ -199,7 +199,7 @@ jobs:
     # ~10-16 MB/day; gfs-archive/ is ephemeral on CI so each run re-fetches the
     # window (cheap, and self-healing if a day's 00Z run was late). Renders all
     # six datasets (mean/max/min + anomalies vs the climatologies downloaded
-    # above) and folds region means into data-cache.json for export below.
+    # above) and folds region means into data-cache.json.gz for export below.
     # Recent days are all post-2024, so the 2024-01-01 texture floor needs no
     # special handling here.
     - name: Generate GFS textures
@@ -207,10 +207,10 @@ jobs:
         uv run scripts/backfill_gfs.py \
           --start "$(date -u -d '7 days ago' +%Y-%m-%d)" \
           --end "$(date -u +%Y-%m-%d)" \
-          --out ./maps --cache-file ./data-cache.json || true
+          --out ./maps --cache-file ./data-cache.json.gz || true
 
     # Export aggregated time-series JSON for the web frontend (Trends tab).
-    # Reads sst-data-cache.json (already up to date from the graph step) and
+    # Reads data-cache.json.gz (already up to date from the steps above) and
     # writes one JSON per region under maps/timeseries/, which ships to S3.
     - name: Export time-series
       run: |

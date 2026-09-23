@@ -106,10 +106,12 @@ def main(argv: list[str] | None = None) -> int:
         "without redownloading the entire history.",
     )
     args = parser.parse_args(argv)
+    if args.cache_file and not args.cache_file.exists():
+        parser.error(f"--cache-file {args.cache_file} does not exist")
 
     args.archive_root.mkdir(parents=True, exist_ok=True)
     dates = list(date_range(args.start, args.end))
-    if args.cache_file and args.cache_file.exists():
+    if args.cache_file:
         cached = cached_era5_dates(args.cache_file)
         before = len(dates)
         dates = [d for d in dates if d.isoformat() not in cached]
