@@ -1,0 +1,15 @@
+{
+  "name": "sst-viz-nightly-trigger",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "check": "tsc --noEmit",
+    "test-trigger": "wrangler dev --test-scheduled"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250901.0",
+    "typescript": "^5.9.0",
+    "wrangler": "^4.79.0"
+  }
+}

@@ -15,3 +15,7 @@ gfs-archive/
 
 # Atomic-write temp files from cache_io.save_cache
 *.part
+
+# Local secrets and dev state for `wrangler dev` in trigger-worker/
+.dev.vars
+.wrangler/

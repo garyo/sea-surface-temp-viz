@@ -1,0 +1,16 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "sst-viz-nightly-trigger",
+  "account_id": "97571a833a50d387280ecaac7d736c4e",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "workers_dev": false,
+  // NOAA's daily OISST update lands by ~13:00 UTC. Cloudflare cron is UTC.
+  "triggers": { "crons": ["15 13 * * *"] },
+  "vars": {
+    "GITHUB_REPO": "garyo/sea-surface-temp-viz",
+    "WORKFLOW_FILE": "make-images.yml"
+  }
+  // Secret, set with `bunx wrangler secret put GITHUB_TOKEN`: a fine-grained
+  // PAT scoped to this repo with "Actions: Read and write".
+}

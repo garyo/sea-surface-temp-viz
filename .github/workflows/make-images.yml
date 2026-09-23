@@ -11,10 +11,15 @@ on:
           newly_finalized.py existed; the nightly run needs no input.
         required: false
         default: ''
-  schedule:
-    # Data is updated at 9am EDT = 13:00 hrs UTC, so run just after that
-    # min hr dom mo dow
-    - cron: '15 13 * * *'
+  # Runs nightly at 13:15 UTC, just after NOAA's daily update, via a
+  # workflow_dispatch from the Cloudflare Worker in trigger-worker/. GitHub's own
+  # `schedule:` trigger is best-effort and was starting runs hours late.
+
+# Never run two at once: both would restore and push the S3 data cache.
+concurrency:
+  group: make-images
+  cancel-in-progress: false
+
 jobs:
   make-images:
     runs-on: ubuntu-latest
