@@ -5,8 +5,10 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-09-01",
   "workers_dev": false,
-  // NOAA's daily OISST update lands by ~13:00 UTC. Cloudflare cron is UTC.
-  "triggers": { "crons": ["15 13 * * *"] },
+  // Ticks every 10 minutes, 13:00–15:50 UTC (Cloudflare cron is UTC).
+  // src/index.ts decides which tick dispatches: the first after NOAA posts the
+  // day's OISST (~13:31), or the 15:30 deadline without it.
+  "triggers": { "crons": ["*/10 13-15 * * *"] },
   "vars": {
     "GITHUB_REPO": "garyo/sea-surface-temp-viz",
     "WORKFLOW_FILE": "make-images.yml"

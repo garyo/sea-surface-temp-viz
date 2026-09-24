@@ -11,9 +11,10 @@ on:
           newly_finalized.py existed; the nightly run needs no input.
         required: false
         default: ''
-  # Runs nightly at 13:15 UTC, just after NOAA's daily update, via a
-  # workflow_dispatch from the Cloudflare Worker in trigger-worker/. GitHub's own
-  # `schedule:` trigger is best-effort and was starting runs hours late.
+  # Runs nightly via a workflow_dispatch from the Cloudflare Worker in
+  # trigger-worker/, as soon as NOAA posts yesterday's OISST (~13:31 UTC) and by
+  # 15:30 UTC regardless. GitHub's own `schedule:` trigger is best-effort and
+  # was starting runs hours late.
 
 # Never run two at once: both would restore and push the S3 data cache.
 concurrency:
@@ -80,9 +81,10 @@ jobs:
         uv run pipeline.py --source oisst --mode map --dataset anom --days-ago 2 --out ./output || true
 
     # This generates textures (.webp) and associated colormap json files (-metadata.json)
-    # Generate for the last 7 days to build up a time series (and catch any missed days)
+    # Generate for the last 8 days to build up a time series (and catch any missed days),
+    # starting from yesterday, which the trigger worker waits for NOAA to post.
     #
-    # Those 7 days are all still preliminary — NOAA finalizes OISST at ~D+14 —
+    # Those days are all still preliminary — NOAA finalizes OISST at ~D+14 —
     # so we also re-render whichever days flipped to final during this run, or
     # every published texture would keep the provisional imagery it was first
     # rendered from. In steady state that's one extra day per night.
@@ -99,7 +101,7 @@ jobs:
         mkdir -p ./maps
         MANUAL_DAYS=$(printf '%s' "$MANUAL_DAYS" | tr -cs '0-9' '\n')
         EXTRA_DAYS=$(uv run scripts/newly_finalized.py --snapshot-in /tmp/prelim-before.json)
-        for days_ago in $(printf '%s\n' 2 3 4 5 6 7 8 $EXTRA_DAYS $MANUAL_DAYS | sort -n -u); do
+        for days_ago in $(printf '%s\n' 1 2 3 4 5 6 7 8 $EXTRA_DAYS $MANUAL_DAYS | sort -n -u); do
           echo "Generating textures for $days_ago days ago..."
           uv run pipeline.py --source oisst --mode texture --dataset sst --days-ago $days_ago --out ./maps || true
           uv run pipeline.py --source oisst --mode texture --dataset anom --days-ago $days_ago --out ./maps || true
