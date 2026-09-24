@@ -99,6 +99,18 @@ def _bbox_exclude(lat_2d: np.ndarray, lon_2d: np.ndarray, bbox: dict) -> np.ndar
     return out
 
 
+def contains(region_id: str, lat_2d: np.ndarray, lon_2d: np.ndarray) -> np.ndarray:
+    """Boolean grid marking the cells inside `region_id` (True = in-region).
+
+    `lat_2d`/`lon_2d` must be on the OISST grid (GRID_SHAPE, lon 0–360); mask
+    regions are precomputed at that resolution.
+    """
+    region = REGIONS[region_id]
+    if "bbox" in region:
+        return ~_bbox_exclude(lat_2d, lon_2d, region["bbox"])
+    return _load_mask(region["mask"])
+
+
 def aggregate(
     data,
     lat_2d: np.ndarray,
@@ -114,11 +126,7 @@ def aggregate(
 
     Returns NaN if no cells are valid (fully masked).
     """
-    region = REGIONS[region_id]
-    if "bbox" in region:
-        cell_excl = _bbox_exclude(lat_2d, lon_2d, region["bbox"])
-    else:
-        cell_excl = ~_load_mask(region["mask"])
+    cell_excl = ~contains(region_id, lat_2d, lon_2d)
 
     data_arr = np.ma.getdata(data)
     existing = np.ma.getmaskarray(data)

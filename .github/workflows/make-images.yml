@@ -218,6 +218,14 @@ jobs:
       run: |
         uv run export_timeseries.py --out-dir ./maps/timeseries
 
+    # Social-media preview cards (og:image) for globe-viz links: one JPEG per
+    # time series plus manifest.json under maps/og/, drawn from the JSON just
+    # exported and this run's textures. The site's Pages Function picks one per
+    # shared URL. Cosmetic, so a failure mustn't block publishing the data.
+    - name: Render social cards
+      run: |
+        uv run export_og_cards.py || true
+
     # Persist the accumulated cache back to S3 so the next run starts from it
     # (see "Restore data cache from S3" above). This is the half that makes
     # collected recent dates durable. Not a git commit — the bucket already is

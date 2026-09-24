@@ -3,6 +3,7 @@
 
 import argparse
 import json
+import mimetypes
 import os
 import re
 import sys
@@ -23,8 +24,12 @@ from dotenv import load_dotenv
 # - WebP textures and -metadata.json siblings are date-stamped in the filename
 #   and never change once written, so a longer TTL is safe and saves bandwidth
 #   when users scrub the time slider.
+# - og/*.jpg social cards keep one name per series and are redrawn nightly; the
+#   site cache-busts them with ?v=<date>, so this TTL only bounds staleness for
+#   a crawler that drops the query string.
 CACHE_CONTROL_BY_EXT = {
     ".json": "public, max-age=300",  # 5 min: small files, freshness matters
+    ".jpg": "public, max-age=3600",
     ".webp": "public, max-age=86400",  # 1 day: date-stamped, immutable in practice
     ".png": "public, max-age=86400",
     ".svg": "public, max-age=86400",
@@ -45,6 +50,11 @@ def upload_file_to_s3(s3_client, local_path, bucket, s3_key, dry_run=False):
     cc = cache_control_for(local_path)
     if cc:
         extra_args["CacheControl"] = cc
+    # Without an explicit type S3 serves binary/octet-stream, which social
+    # crawlers reject for og:image.
+    content_type, _ = mimetypes.guess_type(local_path)
+    if content_type:
+        extra_args["ContentType"] = content_type
 
     try:
         print(f"Uploading: {local_path} -> s3://{bucket}/{s3_key}")

@@ -15,6 +15,7 @@ dependencies = [
     "matplotlib>3.9.0",
     "netcdf4>=1.7.1",
     "numpy>=2.1.1",
+    "pillow>=12.3.0",
     "python-dotenv>=1.0.0",
     "requests>=2.32.3",
     "scipy>=1.14.0",
