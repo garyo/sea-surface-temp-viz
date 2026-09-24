@@ -7,7 +7,7 @@
   "workers_dev": false,
   // Ticks every 10 minutes, 13:00–15:50 UTC (Cloudflare cron is UTC).
   // src/index.ts decides which tick dispatches: the first after NOAA posts the
-  // day's OISST (~13:31), or the 15:30 deadline without it.
+  // day's OISST (public ~14:15), or the 15:30 deadline without it.
   "triggers": { "crons": ["*/10 13-15 * * *"] },
   "vars": {
     "GITHUB_REPO": "garyo/sea-surface-temp-viz",

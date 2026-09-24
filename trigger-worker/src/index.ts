@@ -2,16 +2,18 @@
  * Starts the nightly make-images workflow as soon as NOAA's daily OISST update
  * is out.
  *
- * NOAA posts the previous day's preliminary OISST file at a fixed time each
- * morning: 13:31 UTC through Sept 2026, possibly 14:31 UTC outside US daylight
- * time. Any fixed dispatch time is either early (missing the newest day) or
- * late, so the cron ticks every 10 minutes through a window and dispatches on
- * the first tick that finds the file. OISST is only one of the pipeline's
- * sources, so from DEADLINE on a tick dispatches regardless: a late or missing
- * NOAA update must not cost the day's run.
+ * NOAA writes the previous day's preliminary OISST file at 13:31 UTC (its
+ * Last-Modified, to the second, every day in Sept 2026), but it reaches the
+ * public server some time later: at 14:16 UTC on 2026-09-24. That lag, plus a
+ * possible hour's shift outside US daylight time, makes any fixed dispatch
+ * time either early (missing the newest day) or late, so the cron ticks every
+ * 10 minutes through a window and dispatches on the first tick that finds the
+ * file. OISST is only one of the pipeline's sources, so from DEADLINE on a
+ * tick dispatches regardless: a late or missing NOAA update must not cost the
+ * day's run.
  *
- * Each tick first asks GitHub whether a run has started since the data
- * appeared (or, without it, since the window opened). That keeps later ticks
+ * Each tick first asks GitHub whether a run has started since the file was
+ * written (or, without it, since the window opened). That keeps later ticks
  * from doubling up, retries a failed dispatch on the next tick, and counts a
  * manual run that already had the fresh data.
  *

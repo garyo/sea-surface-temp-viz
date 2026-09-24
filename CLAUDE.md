@@ -10,7 +10,7 @@ Despite the legacy repo name, this is now a multi-source pipeline. New sources p
 
 ## Deploy / runtime
 
-GitHub Actions workflow `.github/workflows/make-images.yml` runs nightly, dispatched by the Cloudflare Worker in `trigger-worker/` as soon as NOAA posts yesterday's OISST (13:31 UTC, like clockwork, as of Sept 2026 — possibly 14:31 outside US daylight time) and by 15:30 UTC regardless. It prunes the last 90 days from cache (catches reanalyses), regenerates graphs/maps/textures, exports time-series JSON, and uploads everything to S3 (`climate-change-assets/sea-surface-temp/`). AWS creds in `.env` (gitignored).
+GitHub Actions workflow `.github/workflows/make-images.yml` runs nightly, dispatched by the Cloudflare Worker in `trigger-worker/` as soon as NOAA posts yesterday's OISST and by 15:30 UTC regardless. NOAA's files are stamped 13:31 UTC to the second every day, but that's when they're *written*: they reach the public server later (14:16 UTC on 2026-09-24), so don't schedule off `Last-Modified` — check that the file exists, as the worker does. It prunes the last 90 days from cache (catches reanalyses), regenerates graphs/maps/textures, exports time-series JSON, and uploads everything to S3 (`climate-change-assets/sea-surface-temp/`). AWS creds in `.env` (gitignored).
 
 `upload-to-s3.py` regenerates `index.json` from the S3 bucket listing — the bucket is the source of truth for available dates and regions, not the local repo.
 

@@ -12,7 +12,7 @@ on:
         required: false
         default: ''
   # Runs nightly via a workflow_dispatch from the Cloudflare Worker in
-  # trigger-worker/, as soon as NOAA posts yesterday's OISST (~13:31 UTC) and by
+  # trigger-worker/, as soon as NOAA posts yesterday's OISST (~14:15 UTC) and by
   # 15:30 UTC regardless. GitHub's own `schedule:` trigger is best-effort and
   # was starting runs hours late.
 
