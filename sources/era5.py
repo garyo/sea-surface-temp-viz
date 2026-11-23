@@ -135,13 +135,15 @@ CLIMATOLOGY_FILENAMES: dict[str, str] = {
 }
 
 
-@functools.lru_cache(maxsize=2)
+@functools.lru_cache(maxsize=4)
 def _load_climatology(path_str: str, var_name: str) -> np.ndarray:
     """Open a climatology NetCDF and return its data as a NumPy array.
 
     Cached per-process — aggregate_archive.py spawns many worker processes,
     each loads each climatology once and reuses it across every aggregated
-    NetCDF. ~140 MB resident per (worker × climatology).
+    NetCDF. ~1.5 GB resident per (worker × climatology). The cache must hold
+    every climatology one process cycles through per day — GFS's anomalies
+    use three (t2m mean, max, min) — or each day evicts and reloads them all.
 
     Returns shape (366, 720, 1440) float32 in °C. SST climatology has NaN
     over land; t2m is defined everywhere.
