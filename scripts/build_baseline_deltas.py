@@ -7,6 +7,7 @@ See ``baselines.py`` for what Δ means and how it's applied. This script writes:
     baselines/fields/delta-{field}-{baseline}.nc   (month=12, 720×1440, °C)
     baselines/fields/valid-{oisst,era5}-sst.npy    (valid-cell masks)
     baselines/offsets.json                         (committed; region means)
+    {publish dir}/baselines/delta-*.webp, manifest.json   (the globe's copy)
 
 ``fields/`` is gitignored (the Δ grids are also uploaded to S3 for the globe);
 ``offsets.json`` is small and committed, so the nightly export needs neither.
@@ -58,6 +59,7 @@ import argparse
 import datetime
 import json
 import re
+import shutil
 import sys
 import tempfile
 import urllib.request
@@ -73,6 +75,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import baselines
 from sources.era5 import _OISST_LATS, _OISST_LONS, _resample_to_oisst_grid
+from textures import Rg16, save_lossless_webp
 
 if TYPE_CHECKING:
     import xarray as xr
@@ -606,8 +609,56 @@ def write_offsets() -> None:
     for baseline_id, by_source in table.items():
         for source, by_dataset in by_source.items():
             for dataset, by_region in by_dataset.items():
-                annual = np.mean(by_region["global"])
+                annual = by_region["global"][0]
                 print(f"  {baseline_id:>14} {source}.{dataset}: global {annual:+.3f}")
+
+
+# The globe's copy of each Δ field: its five seasonal coefficients at full
+# resolution, stacked as tiles in one 1440×3600 image. A 0.002 °C step keeps
+# any day's Δ (five rounded terms) within 0.005 °C. Coarser grids save little
+# and miss sharp features at coasts and sea-ice edges by >0.1 °C.
+DELTA_ENCODING = Rg16(scale=0.002, offset=-32.768)
+
+
+def write_atlases(publish_dir: Path) -> None:
+    """Publish each Δ field's seasonal coefficients as an RG16 atlas + manifest.
+
+    Written to ``{publish_dir}/baselines/`` (upload-to-s3.py publishes it as
+    ``sea-surface-temp/baselines/``). Tile k from the top holds coefficient k
+    of [a0, a1, b1, a2, b2] (see baselines.py); each tile is north up with
+    longitude 0→360° left to right, like the data textures. The manifest maps
+    every (baseline, source, anomaly dataset) to its atlas, so the site needn't
+    know which sources share a field.
+    """
+    out_dir = publish_dir / "baselines"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    fields: dict[str, dict[str, dict[str, str]]] = {}
+    for baseline_id in baselines.BASELINES:
+        for source, dataset in baselines.ANOMALY_VARIABLE:
+            field = baselines.delta_field(baseline_id, source, dataset)
+            if not baselines.delta_path(baseline_id, field).exists():
+                continue
+            name = f"delta-{field}-{baseline_id}.webp"
+            fields.setdefault(baseline_id, {}).setdefault(source, {})[dataset] = name
+            if (out_dir / name).exists():
+                continue
+            coefficients = baselines.seasonal_coefficients(
+                baselines.load_delta(baseline_id, field)
+            )
+            # encode() flips rows (south→north in, north up out), so stack the
+            # tiles bottom-first to land tile 0 on top.
+            atlas = np.concatenate(list(coefficients[::-1]), axis=0)
+            save_lossless_webp(DELTA_ENCODING.encode(atlas), out_dir / name)
+            print(f"✓ {out_dir / name}")
+    manifest = {
+        "encoding": DELTA_ENCODING.as_metadata(),
+        "terms": ["a0", "a1", "b1", "a2", "b2"],
+        "tile_width": len(_OISST_LONS),
+        "tile_height": len(_OISST_LATS),
+        "fields": fields,
+    }
+    (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=1) + "\n")
+    print(f"✓ {out_dir / 'manifest.json'}")
 
 
 BUILDERS = {"1991-2020": build_1991_2020, "preindustrial": build_preindustrial}
@@ -621,14 +672,22 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--offsets-only",
         action="store_true",
-        help="Skip building Δ fields; just recompute offsets.json from them",
+        help="Skip building Δ fields; just recompute offsets.json and atlases",
+    )
+    parser.add_argument(
+        "--publish-dir",
+        type=Path,
+        default=Path("./maps"),
+        help="Where to write the globe's Δ atlases (under baselines/)",
     )
     args = parser.parse_args(argv)
 
     if not args.offsets_only:
         for baseline_id in args.baseline or sorted(BUILDERS):
             BUILDERS[baseline_id]()
+        shutil.rmtree(args.publish_dir / "baselines", ignore_errors=True)
     write_offsets()
+    write_atlases(args.publish_dir)
     return 0
 
 

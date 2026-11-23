@@ -30,13 +30,15 @@ $$A_B(x,t) = T(x,t) - C_B(x,t) = A_{1971}(x,t) + \Delta_B(x,t), \qquad
 \Delta_B = C_{1971\text{–}2000} - C_B$$
 
 So no climatologies need recomputing at daily resolution. We need only $\Delta_B$
-for each cell and calendar month. A region's average is a linear operation, so the
-same identity holds for regional means:
+as a function of place and time of year. §3.4 reduces it to five numbers per grid
+cell. A region's average is a linear operation, so the same identity holds for
+regional means:
 
 $$\overline{A_B}^{\,R}(t) = \overline{A_{1971}}^{\,R}(t) + \overline{\Delta_B}^{\,R}(t)$$
 
-The graphs therefore need just 12 numbers per region, series and baseline. The
-pipeline publishes them alongside each time series (see §6).
+The graphs therefore need just five numbers per region, series and baseline,
+which the pipeline publishes alongside each time series. The globe uses the five
+per-cell coefficient fields and adds $\Delta_B$ to every pixel (see §6).
 
 ## 2. 1991–2020
 
@@ -163,14 +165,21 @@ Then, across datasets:
 The reconstructions are monthly, and no daily record reaches 1850–1900 globally.
 For every field, including the 1991–2020 ones, the 12 monthly values at each cell
 are reduced to a mean plus two annual harmonics. That is the least-squares fit
-that keeps the first three Fourier terms:
+that keeps the first three Fourier terms. As a function of the fraction of the
+year $\tau$:
 
-$$\Delta(x,m) \approx a_0 + \sum_{j=1}^{2}\Big[a_j\cos\tfrac{2\pi j (m-1)}{12} + b_j\sin\tfrac{2\pi j (m-1)}{12}\Big]$$
+$$\Delta(x,\tau) = a_0(x) + \sum_{j=1}^{2}\Big[a_j(x)\cos 2\pi j\tau + b_j(x)\sin 2\pi j\tau\Big]$$
 
-Copernicus fits a single harmonic to its global monthly offsets. A second harmonic
-allows a slightly asymmetric seasonal cycle. The site then places each month's
-value at mid-month and interpolates linearly between them, wrapping from December
-to January, so a daily curve has no steps.
+The fit places month $m$'s mean at $\tau = (m - \tfrac12)/12$. Copernicus fits a
+single harmonic to its global monthly offsets. A second harmonic allows a slightly
+asymmetric seasonal cycle.
+
+Everything downstream stores the five coefficients $(a_0, a_1, b_1, a_2, b_2)$,
+per region for the graphs and per cell for the globe, and evaluates this formula
+on each day at $\tau = (d + \tfrac12)/366$. Here $d$ is the site's leap-aligned
+day of year (0 = 1 January, 59 = 29 February, 365 = 31 December). The curve is
+smooth through the year, including across December–January, so daily values need
+no interpolation. $a_0$ is the annual-mean offset.
 
 ## 4. Validation
 
@@ -237,16 +246,25 @@ are the comparable quantities.)
 ## 6. Files and reproduction
 
 ```
-uv run scripts/build_baseline_deltas.py          # 1991-2020, then pre-industrial, then offsets
+uv run scripts/build_baseline_deltas.py          # 1991-2020, then pre-industrial, then offsets + atlases
 uv run scripts/build_baseline_deltas.py --offsets-only   # e.g. after adding a region
+uv run upload-to-s3.py --maps-dir ./maps                 # publish the atlases
 ```
 
 - `baselines/fields/delta-{sst,t2m,oisst}-{1991-2020,preindustrial}.nc`: Δ
   per calendar month on the 0.25° OISST grid, in °C, to be added to a 1971–2000
   anomaly. `sst`/`t2m` apply to ERA5 and GFS; `oisst` to OISST.
-- `baselines/offsets.json` (committed): area-weighted regional means of each field,
-  `{baseline: {source: {dataset: {region: [Jan..Dec]}}}}`. `export_timeseries.py`
+- `baselines/offsets.json` (committed): the seasonal coefficients
+  `[a0, a1, b1, a2, b2]` of each field's area-weighted regional mean,
+  `{baseline: {source: {dataset: {region: [...]}}}}`. `export_timeseries.py`
   copies each series' entry into its region JSON as `baseline_offsets`.
+- `maps/baselines/delta-{field}-{baseline}.webp` and `manifest.json`, published
+  to `sea-surface-temp/baselines/`: the per-cell coefficients for the globe. Each
+  is a lossless 1440×3600 WebP of five north-up 0.25° tiles ($a_0$ on top). Each
+  pixel holds a 16-bit count in R (high byte) and G (low byte):
+  value = −32.768 + 0.002 × count °C. That keeps any day's $\Delta$ within
+  0.005 °C of the full field. The manifest gives the encoding, the tile layout,
+  and which atlas applies to each (baseline, source, anomaly dataset).
 - `baselines/raw/`: cached downloads (about 5 GB).
 
 The build takes a few minutes once the downloads are cached. ERA5 monthly means

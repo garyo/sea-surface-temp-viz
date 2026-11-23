@@ -18,7 +18,7 @@ smaller than array-of-objects, ECharts consumes natively):
           "datasets": {
             "sst":  { "dates": ["1982-01-01", ...], "values": [26.81, ...] },
             "anom": { "dates": [...],               "values": [...],
-                      "baseline_offsets": { "1991-2020": [12 floats], ... } }
+                      "baseline_offsets": { "1991-2020": [5 floats], ... } }
           },
           "preliminary_from": "2026-08-01"
         }
@@ -33,9 +33,9 @@ the frontend draws that tail as a dotted line. It is derived from the
 ``{date}-{source}-preliminary-flag`` cache keys written by pipeline.py.
 
 ``baseline_offsets`` rides on anomaly datasets only: for each alternative
-baseline, the region's mean Δ per calendar month (Jan..Dec, °C), to be added to
-the 1971–2000 values. It comes from the committed ``baselines/offsets.json``;
-see ``baselines.py``.
+baseline, the seasonal coefficients [a0, a1, b1, a2, b2] (°C) of the region's
+mean Δ, to be added to the 1971–2000 values. It comes from the committed
+``baselines/offsets.json``; see ``baselines.py`` for the formula.
 """
 
 from __future__ import annotations

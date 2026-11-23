@@ -6,14 +6,21 @@ climatology, or our ERA5 daily climatology for ERA5 and GFS). Moving to another
 baseline B doesn't need new climatologies at daily resolution, because the
 difference is additive and the same every year:
 
-    anomaly_vs_B(cell, t) = anomaly_vs_1971–2000(cell, t) + Δ_B(cell, month(t))
+    anomaly_vs_B(cell, t) = anomaly_vs_1971–2000(cell, t) + Δ_B(cell, τ(t))
     Δ_B = mean over 1971–2000 − mean over B
 
-Δ_B is stored per calendar month on the OISST 720×1440 grid
-(``fields/delta-{field}-{baseline}.nc``, built by
-``scripts/build_baseline_deltas.py``). Region averages of Δ_B — what the
-time-series graphs need — are small enough to commit as ``offsets.json``, so the
-nightly export never touches the large fields.
+Δ_B is built per calendar month on the OISST 720×1440 grid
+(``fields/delta-{field}-{baseline}.nc``, by ``scripts/build_baseline_deltas.py``)
+and reduced to a mean plus two annual harmonics, so everything downstream
+carries five coefficients per cell (or region) and evaluates
+
+    Δ(τ) = a0 + a1·cos 2πτ + b1·sin 2πτ + a2·cos 4πτ + b2·sin 4πτ
+
+at the fraction of the year τ — exactly, on any day, with no month
+interpolation. Month m's mean sits at τ = (m − ½)/12; the site uses
+τ = (day-of-year + ½)/366 on its leap-aligned day axis. Region coefficients —
+what the time-series graphs need — are small enough to commit as
+``offsets.json``, so the nightly export never touches the large fields.
 
 A regional mean of a sum is the sum of regional means only over the *same*
 cells, so each source's offsets are averaged over that source's own valid cells
@@ -91,7 +98,31 @@ SOURCE_MASK: dict[tuple[str, str], str | None] = {
 }
 
 OffsetTable = dict[str, dict[str, dict[str, dict[str, list[float]]]]]
-"""baseline → source → dataset → region → 12 monthly offsets (°C)."""
+"""baseline → source → dataset → region → [a0, a1, b1, a2, b2] (°C)."""
+
+SEASONAL_HARMONICS = 2
+
+
+def seasonal_basis(tau: np.ndarray) -> np.ndarray:
+    """(len(tau), 5) design matrix: 1, cos 2πτ, sin 2πτ, cos 4πτ, sin 4πτ."""
+    cols = [np.ones_like(tau)]
+    for j in range(1, SEASONAL_HARMONICS + 1):
+        cols += [np.cos(2 * np.pi * j * tau), np.sin(2 * np.pi * j * tau)]
+    return np.stack(cols, axis=1)
+
+
+MONTH_TAU = (np.arange(12) + 0.5) / 12
+
+
+def seasonal_coefficients(monthly: np.ndarray) -> np.ndarray:
+    """Least-squares [a0, a1, b1, a2, b2] (leading axis) for 12 monthly values.
+
+    Δ fields are already reduced to these harmonics, so the fit is exact.
+    """
+    coefficients, *_ = np.linalg.lstsq(
+        seasonal_basis(MONTH_TAU), monthly.reshape(12, -1), rcond=None
+    )
+    return coefficients.reshape(-1, *monthly.shape[1:])
 
 
 def delta_path(baseline_id: str, field: str) -> Path:
@@ -130,7 +161,7 @@ def regional_offsets(
     lat_2d: np.ndarray,
     lon_2d: np.ndarray,
 ) -> dict[str, list[float]]:
-    """Cos-lat-weighted regional mean of each month of Δ, rounded to 0.001 °C."""
+    """Each region's seasonal coefficients of its cos-lat-weighted mean Δ."""
     weights = np.cos(np.radians(lat_2d))
     out: dict[str, list[float]] = {}
     for rid in regions.region_ids():
@@ -138,9 +169,8 @@ def regional_offsets(
         if valid is not None:
             cells = cells & valid
         w = weights[cells]
-        out[rid] = [
-            round(float(np.average(month[cells], weights=w)), 3) for month in delta
-        ]
+        monthly = np.array([np.average(month[cells], weights=w) for month in delta])
+        out[rid] = [round(float(c), 4) for c in seasonal_coefficients(monthly)]
     return out
 
 
@@ -154,7 +184,7 @@ def load_offsets(path: Path = OFFSETS_PATH) -> OffsetTable:
 def offsets_for(
     table: OffsetTable, source: str, dataset: str, region: str
 ) -> dict[str, list[float]]:
-    """``{baseline: [12 monthly offsets]}`` for one series; empty if none apply."""
+    """``{baseline: [a0, a1, b1, a2, b2]}`` for one series; empty if none apply."""
     return {
         baseline: by_source[source][dataset][region]
         for baseline, by_source in table.items()
