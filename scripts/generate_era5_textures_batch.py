@@ -30,11 +30,9 @@ import time
 import urllib.request
 from pathlib import Path
 
-import matplotlib.pyplot as plt
-
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from pipeline import colormap_for
 from sources.era5 import Era5Source
+from textures import write_textures
 
 DEFAULT_START = datetime.date(2024, 1, 1)
 S3_INDEX_URL = (
@@ -110,7 +108,6 @@ def main(argv: list[str] | None = None) -> int:
     if unknown:
         parser.error(f"unknown dataset(s) {unknown}; era5 has {list(source.datasets)}")
     print(f"Datasets: {dataset_ids}")
-    cmaps = {ds_id: colormap_for(source.datasets[ds_id]) for ds_id in dataset_ids}
 
     one = datetime.timedelta(days=1)
     dates: list[datetime.date] = []
@@ -138,31 +135,8 @@ def main(argv: list[str] | None = None) -> int:
         try:
             with source.open_local(nc_path) as raw:
                 for ds_id in dataset_ids:
-                    spec = source.datasets[ds_id]
                     data = source.get_data_array(raw, ds_id)
-                    cmap, vmin, vmax = cmaps[ds_id]
-                    title = spec.title_template.format(date=date_str)
-                    metadata = {
-                        "cmap": spec.cmap_def,
-                        "title": title,
-                        "dataset": ds_id,
-                        "date": date_str,
-                        "year": d.year,
-                        "month": d.month,
-                        "day": d.day,
-                    }
-                    for filename in source.equirect_filenames(ds_id, date_str):
-                        out_path = args.out / filename
-                        plt.imsave(
-                            out_path,
-                            data,
-                            cmap=cmap,
-                            vmin=vmin,
-                            vmax=vmax,
-                            origin="lower",
-                        )
-                        meta_out = out_path.parent / (out_path.stem + "-metadata.json")
-                        meta_out.write_text(json.dumps(metadata))
+                    write_textures(source, ds_id, d, data, args.out)
             ok += 1
         except Exception as e:  # noqa: BLE001 — surface for triage
             fail += 1

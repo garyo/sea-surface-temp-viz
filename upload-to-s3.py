@@ -298,6 +298,9 @@ def generate_index_from_s3(bucket, s3_prefix, aws_access_key=None, aws_secret_ke
     # an SST date exists but its anomaly texture doesn't yet (anomaly variants
     # lag, and the historical back-catalog was backfilled separately).
     per_source_dataset_dates: dict[str, dict[str, set[str]]] = {}
+    # 16-bit data textures (textures.py), listed separately as `data_dates`:
+    # the current globe needs these, while older clients still read `dates`.
+    per_source_dataset_data_dates: dict[str, dict[str, set[str]]] = {}
     timeseries_regions: set[str] = set()
 
     oisst_sst_re = re.compile(r"(\d{4}-\d{2}-\d{2})-sst-temp-equirect\.webp$")
@@ -307,6 +310,7 @@ def generate_index_from_s3(bucket, s3_prefix, aws_access_key=None, aws_secret_ke
     prefixed_re = re.compile(
         r"(\d{4}-\d{2}-\d{2})-([a-z0-9]+)-([a-z0-9-]+)-equirect\.webp$"
     )
+    data_re = re.compile(r"(\d{4}-\d{2}-\d{2})-([a-z0-9]+)-([a-z0-9-]+)-data\.webp$")
 
     def add_date(source: str, dataset: str, date: str) -> None:
         per_source_dataset_dates.setdefault(source, {}).setdefault(dataset, set()).add(
@@ -331,6 +335,14 @@ def generate_index_from_s3(bucket, s3_prefix, aws_access_key=None, aws_secret_ke
             m = oisst_anom_re.match(filename)
             if m:
                 add_date("oisst", "anom", m.group(1))
+                continue
+
+            m = data_re.match(filename)
+            if m:
+                dataset = m.group(3).replace("-", "_")
+                per_source_dataset_data_dates.setdefault(m.group(2), {}).setdefault(
+                    dataset, set()
+                ).add(m.group(1))
                 continue
 
             m = prefixed_re.match(filename)
@@ -358,6 +370,9 @@ def generate_index_from_s3(bucket, s3_prefix, aws_access_key=None, aws_secret_ke
                 "dates": sorted_dts,
                 "latest": sorted_dts[-1] if sorted_dts else None,
             }
+            data_dts = per_source_dataset_data_dates.get(src, {}).get(ds)
+            if data_dts:
+                datasets_meta[ds]["data_dates"] = sorted(data_dts)
             src_union.update(dts)
         sorted_src = sorted(src_union)
         sources_meta[src] = {

@@ -20,7 +20,6 @@ import argparse
 import asyncio
 import calendar
 import datetime
-import json
 import pathlib
 import sys
 from collections import defaultdict
@@ -33,17 +32,13 @@ from matplotlib.colors import LinearSegmentedColormap
 
 import cache_io
 from sources import SOURCES, DataSource
-from sources.base import DatasetSpec
 from sources.oisst import DataFetchError
+from textures import colormap_for, write_textures
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 n_concurrent_requests = 20
 dpi = 150
-
-
-def rescale(x, oldmin, oldmax, newmin, newmax):
-    return ((x - oldmin) / (oldmax - oldmin)) * (newmax - newmin) + newmin
 
 
 # ---------------------------------------------------------------------------
@@ -151,20 +146,6 @@ async def get_temp_for_date(
 # ---------------------------------------------------------------------------
 
 
-def rescale_colormap_def_to_01(cmap):
-    """Map the leftmost x-value to 0 and the rightmost to 1, preserving colors."""
-    vmin = cmap[0][0]
-    vmax = cmap[-1][0]
-    return [[rescale(x[0], vmin, vmax, 0, 1), *x[1:]] for x in cmap]
-
-
-def colormap_for(spec: DatasetSpec) -> tuple[LinearSegmentedColormap, float, float]:
-    cmap = LinearSegmentedColormap.from_list(
-        f"{spec.id}_cmap", rescale_colormap_def_to_01(spec.cmap_def)
-    )
-    return cmap, spec.cmap_def[0][0], spec.cmap_def[-1][0]
-
-
 def plot_globe_dataset(data, lat_1d, lon_1d, vmin, vmax, cmap, title):
     """Mollweide projection of one date's data."""
     _, ax = plt.subplots(figsize=(10, 7), subplot_kw={"projection": "mollweide"})
@@ -192,16 +173,6 @@ def plot_globe_dataset(data, lat_1d, lon_1d, vmin, vmax, cmap, title):
     )
     plt.tight_layout()
     return plt
-
-
-def plot_equirect_dataset(data, vmin, vmax, cmap, outfile):
-    plt.imsave(outfile, data, cmap=cmap, vmin=vmin, vmax=vmax, origin="lower")
-
-
-def save_metadata(metadata, outfile) -> None:
-    p = pathlib.Path(outfile)
-    out = p.parent / (p.stem + "-metadata.json")
-    out.write_text(json.dumps(metadata))
 
 
 # ---------------------------------------------------------------------------
@@ -245,29 +216,8 @@ async def process_map(source: DataSource, args) -> None:
         return
 
     # texture mode
-    metadata = {
-        "cmap": spec.cmap_def,
-        "title": title,
-        "dataset": args.dataset,
-        "date": date_str,
-        "year": date.year,
-        "month": date.month,
-        "day": date.day,
-    }
-    # Orthogonal axes (variable / statistic / kind) so the frontend can render
-    # independent selectors — e.g. a GFS min/mean/max button group. Only emitted
-    # for datasets that declare them; legacy single-axis datasets omit them.
-    for axis in ("variable", "statistic", "kind"):
-        val = getattr(spec, axis)
-        if val is not None:
-            metadata[axis] = val
     if args.out:
-        out_dir = pathlib.Path(args.out)
-        out_dir.mkdir(parents=True, exist_ok=True)
-        for filename in source.equirect_filenames(args.dataset, date_str):
-            out_path = out_dir / filename
-            plot_equirect_dataset(data, vmin, vmax, cmap, out_path)
-            save_metadata(metadata, out_path)
+        write_textures(source, args.dataset, date, data, pathlib.Path(args.out))
 
 
 # ---------------------------------------------------------------------------

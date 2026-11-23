@@ -143,6 +143,15 @@ class DataSource(ABC):
         spec = self.datasets[dataset_id]
         return [f"{date_str}-{spec.equirect_basename}-equirect.webp"]
 
+    def data_texture_filename(self, dataset_id: str, date_str: str) -> str:
+        """Filename for the 16-bit data texture (see textures.py).
+
+        Uniform across sources — ``{date}-{source}-{dataset}-data.webp`` with
+        the dataset id's underscores as hyphens — unlike the legacy equirect
+        names, which OISST keeps unprefixed for old clients.
+        """
+        return f"{date_str}-{self.id}-{dataset_id.replace('_', '-')}-data.webp"
+
     def map_filename(self, dataset_id: str) -> str:
         """Filename for a mollweide map plot."""
         spec = self.datasets[dataset_id]

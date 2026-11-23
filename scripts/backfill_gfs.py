@@ -40,14 +40,13 @@ import urllib.request
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
-import matplotlib.pyplot as plt
-
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import cache_io
 import regions
-from pipeline import cache_key, colormap_for
+from pipeline import cache_key
 from sources.era5 import Era5Source
 from sources.gfs import GfsFetchError, GfsSource, _build_daily_nc
+from textures import write_textures
 
 # The noaa-gfs-bdp-pds 0.25° atmos archive begins at the GFSv16 upgrade
 # (2021-03-23) — earlier dates have no gfs.tHHz.pgrb2.0p25 under atmos/ and just
@@ -156,7 +155,6 @@ def render_aggregate_phase(
     save_every: int,
 ) -> tuple[int, int]:
     """Render textures + fold region means into the cache, serially."""
-    cmaps = {ds: colormap_for(source.datasets[ds]) for ds in dataset_ids}
     region_ids = regions.region_ids()
     ok = fail = 0
     started = time.time()
@@ -170,34 +168,8 @@ def render_aggregate_phase(
             with source.open_local(nc_path) as raw:
                 lat_2d, lon_2d = source.latlon_2d(raw)
                 for ds_id in dataset_ids:
-                    spec = source.datasets[ds_id]
                     data = source.get_data_array(raw, ds_id)
-                    cmap, vmin, vmax = cmaps[ds_id]
-                    metadata = {
-                        "cmap": spec.cmap_def,
-                        "title": spec.title_template.format(date=date_str),
-                        "dataset": ds_id,
-                        "date": date_str,
-                        "year": d.year,
-                        "month": d.month,
-                        "day": d.day,
-                        "variable": spec.variable,
-                        "statistic": spec.statistic,
-                        "kind": spec.kind,
-                    }
-                    for fn in source.equirect_filenames(ds_id, date_str):
-                        out_path = out_dir / fn
-                        plt.imsave(
-                            out_path,
-                            data,
-                            cmap=cmap,
-                            vmin=vmin,
-                            vmax=vmax,
-                            origin="lower",
-                        )
-                        (
-                            out_path.parent / (out_path.stem + "-metadata.json")
-                        ).write_text(json.dumps(metadata))
+                    write_textures(source, ds_id, d, data, out_dir)
                     for rid in region_ids:
                         val = regions.aggregate(data, lat_2d, lon_2d, rid)
                         cache[
