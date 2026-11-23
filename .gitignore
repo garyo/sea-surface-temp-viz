@@ -19,3 +19,7 @@ gfs-archive/
 # Local secrets and dev state for `wrangler dev` in trigger-worker/
 .dev.vars
 .wrangler/
+
+# Baseline Δ grids and their raw ERA5 downloads (offsets.json is committed)
+baselines/fields/
+baselines/raw/

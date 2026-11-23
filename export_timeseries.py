@@ -17,7 +17,8 @@ smaller than array-of-objects, ECharts consumes natively):
         "oisst": {
           "datasets": {
             "sst":  { "dates": ["1982-01-01", ...], "values": [26.81, ...] },
-            "anom": { "dates": [...],               "values": [...] }
+            "anom": { "dates": [...],               "values": [...],
+                      "baseline_offsets": { "1991-2020": [12 floats], ... } }
           },
           "preliminary_from": "2026-08-01"
         }
@@ -30,6 +31,11 @@ days are still provisional (NOAA publishes OISST ``_preliminary`` files for ~2
 weeks before revising them). Every date at or after it is subject to revision;
 the frontend draws that tail as a dotted line. It is derived from the
 ``{date}-{source}-preliminary-flag`` cache keys written by pipeline.py.
+
+``baseline_offsets`` rides on anomaly datasets only: for each alternative
+baseline, the region's mean Δ per calendar month (Jan..Dec, °C), to be added to
+the 1971–2000 values. It comes from the committed ``baselines/offsets.json``;
+see ``baselines.py``.
 """
 
 from __future__ import annotations
@@ -44,6 +50,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import baselines
 import cache_io
 import regions
 
@@ -130,15 +137,19 @@ def build_payload(
     region_id: str,
     sources: dict[str, dict[str, list[tuple[str, float]]]],
     prelim: dict[str, set[str]],
+    offsets: baselines.OffsetTable,
 ) -> dict[str, Any]:
     sources_out: dict[str, dict[str, Any]] = {}
     for source_id, datasets in sources.items():
-        ds_out: dict[str, dict[str, list]] = {}
+        ds_out: dict[str, dict[str, Any]] = {}
         for ds_name, entries in datasets.items():
             ds_out[ds_name] = {
                 "dates": [d for d, _ in entries],
                 "values": [v for _, v in entries],
             }
+            ds_offsets = baselines.offsets_for(offsets, source_id, ds_name, region_id)
+            if ds_offsets:
+                ds_out[ds_name]["baseline_offsets"] = ds_offsets
         sources_out[source_id] = {"datasets": ds_out}
         first_prelim = preliminary_from(datasets, prelim.get(source_id, set()))
         if first_prelim:
@@ -231,6 +242,7 @@ def main(argv: list[str] | None = None) -> int:
     args.out_dir.mkdir(parents=True, exist_ok=True)
     cache = load_cache(args.cache_file)
     grouped, prelim = group_cache(cache)
+    offsets = baselines.load_offsets()
 
     if not grouped:
         print("⚠️  No regions found in cache; nothing to write")
@@ -258,7 +270,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             continue
 
-        payload = build_payload(region_id, sources, prelim)
+        payload = build_payload(region_id, sources, prelim, offsets)
         out_path = args.out_dir / f"{region_id}.json"
         with out_path.open("w") as f:
             json.dump(payload, f, separators=(",", ":"))

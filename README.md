@@ -27,6 +27,12 @@ the variance or "anomaly" from the mean value from the 1971-2000 time
 period. The anomalies are computed cell by cell by subtracting the
 mean value at that grid cell over the 1971-2000 period.
 
+The time series also carry offsets that re-express those anomalies
+against 1991–2020 (the current WMO normal) and against the
+pre-industrial 1850–1900 period used by the IPCC. How those offsets are
+derived, from which datasets, and how they were validated is documented
+in [doc/baselines.md](doc/baselines.md).
+
 ![SST temp graph](https://github.com/garyo/sea-surface-temp-viz/releases/latest/download/sst-all.png)
 ![SST anomaly graph](https://github.com/garyo/sea-surface-temp-viz/releases/latest/download/sst-all-anom.png)
 ![SST temp map](https://github.com/garyo/sea-surface-temp-viz/releases/latest/download/sst-sst-map.webp)
