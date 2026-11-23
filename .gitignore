@@ -23,3 +23,4 @@ gfs-archive/
 # Baseline Δ grids and their raw ERA5 downloads (offsets.json is committed)
 baselines/fields/
 baselines/raw/
+oisst-archive/

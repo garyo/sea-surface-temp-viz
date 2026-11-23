@@ -184,7 +184,7 @@ jobs:
         # marks a date present once *any* era5 texture exists, which would
         # wrongly skip dates whose anomaly texture is still missing; the S3
         # upload step still skips byte-identical files.
-        uv run scripts/generate_era5_textures_batch.py \
+        uv run scripts/generate_textures_batch.py --source era5 \
           --start "$(date -u -d '90 days ago' +%Y-%m-%d)" \
           --end "$(date -u -d '11 days ago' +%Y-%m-%d)" \
           --no-skip-existing-on-s3 \

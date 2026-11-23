@@ -73,6 +73,11 @@ class DataSource(ABC):
         ``oisst-avhrr-v02r01.YYYYMMDD.nc``, ERA5: ``era5-YYYYMMDD.nc``).
         """
 
+    @staticmethod
+    @abstractmethod
+    def archive_path(archive_root: Path, date: datetime.date) -> Path:
+        """Where one day's raw file lives in a local archive under ``archive_root``."""
+
     @abstractmethod
     async def fetch(
         self,

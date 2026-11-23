@@ -85,6 +85,15 @@ class OisstSource(DataSource):
     archive_root = Path("./netcdf-archive")
 
     @staticmethod
+    def archive_path(archive_root: Path, date: datetime.date) -> Path:
+        """Where scripts/backfill_oisst.py saves a day (always the final name)."""
+        return (
+            archive_root
+            / f"{date.year:04}"
+            / f"oisst-avhrr-v02r01.{date.year:04}{date.month:02}{date.day:02}.nc"
+        )
+
+    @staticmethod
     def date_from_filename(path: Path) -> tuple[int, int, int] | None:
         m = _FILENAME_RE.match(path.name)
         if not m:

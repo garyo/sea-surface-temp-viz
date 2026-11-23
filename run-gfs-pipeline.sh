@@ -82,7 +82,7 @@ else
 fi
 
 if [ "$RERENDER_ERA5" = "1" ]; then
-  uv run scripts/generate_era5_textures_batch.py \
+  uv run scripts/generate_textures_batch.py --source era5 \
     --datasets t2m --start "$ERA5_RENDER_START" \
     --no-skip-existing-on-s3 --out ./maps & PID_ERA5=$!
 else

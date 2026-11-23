@@ -1,12 +1,12 @@
 #!/usr/bin/env -S uv run --script
 # SPDX-License-Identifier: MIT
-"""Bulk-generate ERA5 equirectangular globe textures from the local archive.
+"""Bulk-generate globe textures from a source's local NetCDF archive.
 
 The daily CI cron only renders textures for the most recent few days; this
-script fills the back-catalog for a given date range using the already-
-present ``era5-archive/*.nc`` files (so it's pure local CPU work — no CDS
-or GCS traffic) and writes the same ``<date>-era5-<dataset>-equirect.webp``
-+ ``-metadata.json`` outputs that ``pipeline.py --mode texture`` produces.
+script fills the back-catalog for a given date range using already-present
+archive files (``era5-archive/`` or OISST's ``netcdf-archive/`` — pure local
+CPU work, no CDS/GCS/NCEI traffic) and writes the same textures + metadata
+that ``pipeline.py --mode texture`` produces (see textures.write_textures).
 
 Why a batch script and not a loop over ``pipeline.py``? Each ``pipeline.py``
 invocation pays ~2–3 s of matplotlib/xarray import overhead before doing
@@ -17,7 +17,7 @@ Outputs land in ``./maps/`` (matches the CI convention), so the existing
 ``upload-to-s3.py`` can push them and regenerate ``index.json``.
 
 Usage:
-    uv run scripts/generate_era5_textures_batch.py [--start 2024-01-01] [--skip-existing-on-s3]
+    uv run scripts/generate_textures_batch.py [--source era5] [--start 2024-01-01] [--skip-existing-on-s3]
 """
 
 from __future__ import annotations
@@ -31,8 +31,14 @@ import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from sources.era5 import Era5Source
+from sources import DataSource, Era5Source, OisstSource
 from textures import write_textures
+
+# Sources whose days live in a local archive (GFS fetches its own; see
+# backfill_gfs.py).
+ARCHIVED_SOURCES: dict[str, type[DataSource]] = {
+    s.id: s for s in (Era5Source, OisstSource)
+}
 
 DEFAULT_START = datetime.date(2024, 1, 1)
 S3_INDEX_URL = (
@@ -40,16 +46,16 @@ S3_INDEX_URL = (
 )
 
 
-def fetch_s3_era5_dates() -> set[str]:
+def fetch_s3_dates(source_id: str) -> set[str]:
     """Return the set of date strings (YYYY-MM-DD) that already have at
-    least one era5 texture on S3, per index.json. We treat presence in the
-    index as "both sst and t2m exist" — the CI cron always renders both
-    for a given date, so this is a safe coarse-grained filter.
+    least one texture for this source on S3, per index.json. We treat
+    presence in the index as "every dataset exists" — the CI cron always
+    renders them together, so this is a safe coarse-grained filter.
     """
     try:
         with urllib.request.urlopen(S3_INDEX_URL, timeout=30) as resp:
             data = json.load(resp)
-        return set(data.get("sources", {}).get("era5", {}).get("dates", []))
+        return set(data.get("sources", {}).get(source_id, {}).get("dates", []))
     except Exception as e:  # noqa: BLE001
         print(f"⚠  Failed to fetch S3 index ({e}); not skipping anything")
         return set()
@@ -57,7 +63,10 @@ def fetch_s3_era5_dates() -> set[str]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--archive-root", type=Path, default=Era5Source.archive_root)
+    parser.add_argument("--source", choices=sorted(ARCHIVED_SOURCES), default="era5")
+    parser.add_argument(
+        "--archive-root", type=Path, help="Defaults to the source's archive_root"
+    )
     parser.add_argument("--out", type=Path, default=Path("./maps"))
     parser.add_argument(
         "--start",
@@ -94,19 +103,23 @@ def main(argv: list[str] | None = None) -> int:
         "texture is missing — pair --datasets with --no-skip-existing-on-s3.",
     )
     args = parser.parse_args(argv)
+    source_cls = ARCHIVED_SOURCES[args.source]
+    archive_root = args.archive_root or source_cls.archive_root
 
     args.out.mkdir(parents=True, exist_ok=True)
 
     skip_dates: set[str] = set()
     if args.skip_existing_on_s3:
-        skip_dates = fetch_s3_era5_dates()
+        skip_dates = fetch_s3_dates(args.source)
         print(f"Existing on S3 to skip: {len(skip_dates)} dates")
 
-    source = Era5Source()
+    source = source_cls()
     dataset_ids = args.datasets or list(source.datasets)
     unknown = [d for d in dataset_ids if d not in source.datasets]
     if unknown:
-        parser.error(f"unknown dataset(s) {unknown}; era5 has {list(source.datasets)}")
+        parser.error(
+            f"unknown dataset(s) {unknown}; {args.source} has {list(source.datasets)}"
+        )
     print(f"Datasets: {dataset_ids}")
 
     one = datetime.timedelta(days=1)
@@ -127,7 +140,7 @@ def main(argv: list[str] | None = None) -> int:
         if date_str in skip_dates:
             skip += 1
             continue
-        nc_path = Era5Source.archive_path(args.archive_root, d)
+        nc_path = source_cls.archive_path(archive_root, d)
         if not nc_path.exists():
             miss += 1
             print(f"  ⚠  missing archive {nc_path.name}")
