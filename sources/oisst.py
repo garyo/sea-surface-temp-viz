@@ -38,6 +38,12 @@ _OISST_URL_BASE = (
     "/v2.1/access/avhrr"
 )
 
+# NCEI's operational output folder (linked from its OISST product page). It
+# receives each day's file directly, so it can run days ahead of the public
+# archive above when archival is delayed. Files sit at the top level until
+# NCEI files them into per-year folders, by which time the archive has them.
+_OISST_STAGING_URL = "https://www.ncei.noaa.gov/pub/data/cmb/ersst/v5/tmp/oi.operation"
+
 
 def _rel_area(lat: np.ndarray, _lon: np.ndarray) -> np.ndarray:
     """cos(latitude) — the relative area of a 0.25° cell vs. one at the equator."""
@@ -128,6 +134,8 @@ class OisstSource(DataSource):
         urls = [
             f"{_OISST_URL_BASE}/{ym}/oisst-avhrr-v02r01.{ymd}.nc",
             f"{_OISST_URL_BASE}/{ym}/oisst-avhrr-v02r01.{ymd}_preliminary.nc",
+            f"{_OISST_STAGING_URL}/oisst-avhrr-v02r01.{ymd}.nc",
+            f"{_OISST_STAGING_URL}/oisst-avhrr-v02r01.{ymd}_preliminary.nc",
         ]
         async with semaphore:
             print(f"Requesting OISST data for {date}...")
