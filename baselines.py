@@ -157,14 +157,16 @@ def load_valid_mask(source: str, variable: str) -> np.ndarray | None:
 
 def regional_offsets(
     delta: np.ndarray,
+    variable: str,
     valid: np.ndarray | None,
     lat_2d: np.ndarray,
     lon_2d: np.ndarray,
 ) -> dict[str, list[float]]:
-    """Each region's seasonal coefficients of its cos-lat-weighted mean Δ."""
+    """Seasonal coefficients of the cos-lat-weighted mean Δ for each region
+    that carries `variable`."""
     weights = np.cos(np.radians(lat_2d))
     out: dict[str, list[float]] = {}
-    for rid in regions.region_ids():
+    for rid in regions.region_ids_for(variable):
         cells = regions.contains(rid, lat_2d, lon_2d)
         if valid is not None:
             cells = cells & valid

@@ -80,9 +80,12 @@ def aggregate_one(
         if source.is_preliminary(raw):
             out[f"{date_str}-{source.id}-preliminary-flag"] = 1.0
         lat_2d, lon_2d = source.latlon_2d(raw)
-        for ds_id in source.datasets:
+        for ds_id, spec in source.datasets.items():
+            ds_regions = [r for r in regs if regions.applies_to(r, spec.variable)]
+            if not ds_regions:
+                continue
             data = source.get_data_array(raw, ds_id)
-            for region_id in regs:
+            for region_id in ds_regions:
                 val = regions.aggregate(data, lat_2d, lon_2d, region_id)
                 _check_plausible(ds_id, region_id, val)
                 key = f"{date_str}-{source.id}-{ds_id}-{region_id}"
@@ -95,12 +98,13 @@ def all_keys_present(
     cache: dict[str, float],
     region_ids: list[str],
     source_id: str,
-    dataset_ids: list[str],
 ) -> bool:
-    """All region × dataset keys for this date already cached?"""
-    for ds in dataset_ids:
+    """All applicable region × dataset keys for this date already cached?"""
+    for ds, spec in SOURCES[source_id].datasets.items():
         for r in region_ids:
-            if f"{date_str}-{source_id}-{ds}-{r}" not in cache:
+            if regions.applies_to(r, spec.variable) and (
+                f"{date_str}-{source_id}-{ds}-{r}" not in cache
+            ):
                 return False
     return True
 
@@ -146,7 +150,6 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     source_cls = SOURCES[args.source]
-    dataset_ids = list(source_cls.datasets.keys())
     archive_root: Path = args.archive_root or source_cls.archive_root
     args.archive_root = archive_root  # also feeds the existence check below
 
@@ -184,9 +187,7 @@ def main(argv: list[str] | None = None) -> int:
             if ymd is None:
                 continue
             date_str = f"{ymd[0]:04}-{ymd[1]:02}-{ymd[2]:02}"
-            if not all_keys_present(
-                date_str, cache, region_ids, args.source, dataset_ids
-            ):
+            if not all_keys_present(date_str, cache, region_ids, args.source):
                 todo.append(nc)
         print(
             f"To compute: {len(todo)} files (skipping {len(nc_files) - len(todo)} fully cached)"

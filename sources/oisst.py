@@ -113,6 +113,7 @@ class OisstSource(DataSource):
             title_template="{date}\nSea Surface Temp, °C",
             equirect_basename="sst-temp",
             map_basename="sst-sst",
+            variable="sst",
         ),
         "anom": DatasetSpec(
             id="anom",
@@ -120,6 +121,7 @@ class OisstSource(DataSource):
             title_template="{date}\nSea Surface Temp Variance from 1971–2000 Mean, °C",
             equirect_basename="sst-temp-anomaly",
             map_basename="sst-anom",
+            variable="sst",
         ),
     }
 

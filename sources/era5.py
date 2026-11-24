@@ -284,6 +284,7 @@ class Era5Source(DataSource):
             title_template="{date}\nERA5 Sea Surface Temp, °C",
             equirect_basename="era5-sst",
             map_basename="era5-sst",
+            variable="sst",
         ),
         "t2m": DatasetSpec(
             id="t2m",
@@ -291,6 +292,7 @@ class Era5Source(DataSource):
             title_template="{date}\nERA5 2 m Air Temp, °C",
             equirect_basename="era5-t2m",
             map_basename="era5-t2m",
+            variable="t2m",
         ),
         "sst_anom": DatasetSpec(
             id="sst_anom",
@@ -298,6 +300,7 @@ class Era5Source(DataSource):
             title_template="{date}\nERA5 SST Anomaly vs 1971–2000 Mean, °C",
             equirect_basename="era5-sst-anom",
             map_basename="era5-sst-anom",
+            variable="sst",
         ),
         "t2m_anom": DatasetSpec(
             id="t2m_anom",
@@ -305,6 +308,7 @@ class Era5Source(DataSource):
             title_template="{date}\nERA5 2 m Air Temp Anomaly vs 1971–2000 Mean, °C",
             equirect_basename="era5-t2m-anom",
             map_basename="era5-t2m-anom",
+            variable="t2m",
         ),
     }
 

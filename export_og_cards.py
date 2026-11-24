@@ -87,6 +87,7 @@ TEXTURE_LOOKBACK_DAYS = 10
 # Globe center (lat, lon) for each region, chosen to frame it with some context.
 GLOBE_VIEWS: dict[str, tuple[float, float]] = {
     "global": (0, -110),
+    "world": (25, -30),
     "trop": (0, -150),
     "n_hemi": (35, -40),
     "s_hemi": (-35, 110),

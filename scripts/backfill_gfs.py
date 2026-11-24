@@ -155,7 +155,6 @@ def render_aggregate_phase(
     save_every: int,
 ) -> tuple[int, int]:
     """Render textures + fold region means into the cache, serially."""
-    region_ids = regions.region_ids()
     ok = fail = 0
     started = time.time()
 
@@ -170,7 +169,7 @@ def render_aggregate_phase(
                 for ds_id in dataset_ids:
                     data = source.get_data_array(raw, ds_id)
                     write_textures(source, ds_id, d, data, out_dir)
-                    for rid in region_ids:
+                    for rid in regions.region_ids_for(source.datasets[ds_id].variable):
                         val = regions.aggregate(data, lat_2d, lon_2d, rid)
                         cache[
                             cache_key(d.year, d.month, d.day, source.id, ds_id, rid)
@@ -218,6 +217,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Comma-separated dataset ids (default: all available)",
     )
     p.add_argument(
+        "--fetch-only",
+        action="store_true",
+        help="Only build the daily .nc archive (e.g. to feed aggregate_archive.py)",
+    )
+    p.add_argument(
         "--skip-existing-on-s3",
         action="store_true",
         default=False,
@@ -257,6 +261,9 @@ def main(argv: list[str] | None = None) -> int:
 
     available = build_phase(dates, args.archive_root, args.workers)
     print()
+    if args.fetch_only:
+        print(f"Fetched {len(available)} of {len(dates)} days.")
+        return 0 if len(available) == len(dates) else 1
     ok, fail = render_aggregate_phase(
         source,
         dates,

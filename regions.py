@@ -7,6 +7,9 @@ A region is either:
   - a mask: dict with "mask" naming a .npy file under ./masks/ holding a boolean
     grid of shape GRID_SHAPE (True = in-region).
 
+A region may also list the ``variables`` (DatasetSpec.variable) it applies to;
+regions without one apply to every dataset.
+
 Bboxes are evaluated at runtime. Masks are precomputed by
 scripts/precompute_masks.py and committed to the repo so the daily pipeline has
 no shapefile dependency.
@@ -31,6 +34,13 @@ REGIONS: dict[str, dict] = {
     "global": {
         "label": "Global (60°S–60°N)",
         "bbox": {"lat": (-60, 60), "lon": (0, 360)},
+    },
+    # Pole to pole, for air temperature only: SST near the poles is mostly
+    # masked sea ice, so a whole-globe SST mean would add little to "global".
+    "world": {
+        "label": "Whole globe (90°S–90°N)",
+        "bbox": {"lat": (-90, 90), "lon": (0, 360)},
+        "variables": ("t2m",),
     },
     "trop": {
         "label": "Tropics (23.5°S–23.5°N)",
@@ -62,6 +72,16 @@ def region_ids() -> list[str]:
 
 def label_for(region_id: str) -> str:
     return REGIONS[region_id]["label"]
+
+
+def applies_to(region_id: str, variable: str | None) -> bool:
+    """Whether series of `variable` (a DatasetSpec.variable) exist for this region."""
+    allowed = REGIONS[region_id].get("variables")
+    return allowed is None or variable in allowed
+
+
+def region_ids_for(variable: str | None) -> list[str]:
+    return [rid for rid in REGIONS if applies_to(rid, variable)]
 
 
 _mask_cache: dict[str, np.ndarray] = {}

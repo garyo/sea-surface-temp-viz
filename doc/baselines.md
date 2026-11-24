@@ -189,26 +189,34 @@ no interpolation. $a_0$ is the annual-mean offset.
 | Same, per dataset over the cells it covers | Berkeley Earth +0.874, HadCRUT5 +0.897, NOAAGlobalTemp +0.779 °C | |
 | Global 1991–2020 minus 1850–1900, SST | ERSSTv6 +0.490, COBE-SST2 +0.543, mean +0.513 °C | HadSST4, well-sampled cells only (6%): +0.766 °C |
 | Seasonal cycle of the global air-temp step | largest in Mar (+0.55), smallest in Aug (+0.40 °C) | Copernicus: largest in Mar, smallest in Jul |
-| ERA5 2 m air temp, 2024 | +0.70 °C vs 1991–2020, +1.52 °C vs 1850–1900 (60°S–60°N) | Copernicus, whole globe: +0.72 and +1.60 °C |
+| ERA5 2 m air temp, 2024, whole globe | +0.72 °C vs 1991–2020, +1.57 °C vs 1850–1900 | Copernicus: +0.72 and +1.60 °C |
+| ERA5 2 m air temp, 2024, 60°S–60°N | +0.70 °C vs 1991–2020, +1.52 °C vs 1850–1900 | |
+| ERA5 whole-globe daily mean, 2024-01-01 to 2026-11-16 (1,051 days) | absolute: −0.0003 °C mean difference, 0.0008 °C s.d.; vs 1991–2020: +0.001 °C mean, 0.02 °C s.d. | Copernicus Climate Pulse daily series |
 | SST, 2024 | OISST +1.13, ERA5 +1.06 °C vs 1850–1900 (60°S–60°N) | IPCC AR6: ocean +0.88 °C by 2011–2020 |
 
 Our air-temperature step is about 0.04 °C smaller than Copernicus's global offset.
 There are two reasons. Copernicus uses each dataset's published global series,
 which includes poorly observed polar cells that our 70% coverage rule leaves to
 the other datasets. And NOAAGlobalTemp's grid runs lowest of the three. The
-difference is well inside the spread between datasets. Our "Global" region spans
-60°S–60°N, which by itself keeps its numbers from matching whole-planet figures.
+difference is well inside the spread between datasets. It accounts for the
+0.03 °C gap in the 2024 pre-industrial anomaly, since the 1991–2020 anomalies
+agree. Our "Global" region spans 60°S–60°N; air temperature also has a
+"Whole globe" region (from 2024 on), which is the one to compare with
+whole-planet figures. The daily Climate Pulse comparison confirms that our ERA5
+processing reproduces Copernicus's global means; the 0.02 °C day-to-day scatter
+in anomalies comes from our seasonal offset being two smooth harmonics where
+Copernicus uses a day-by-day climatology.
 
 Annual-mean offsets for each region, in °C, added to the 1971–2000 anomaly:
 
-| Baseline / series | Global | Tropics | N. Hemi | S. Hemi | Niño 3.4 | Pacific | Atlantic | Indian | Arctic | Southern |
-|---|---|---|---|---|---|---|---|---|---|---|
-| 1991–2020 · OISST SST | −0.09 | −0.10 | −0.15 | −0.04 | −0.09 | −0.08 | −0.11 | −0.05 | −0.18 | +0.27 |
-| 1991–2020 · ERA5 SST | −0.24 | −0.23 | −0.31 | −0.18 | −0.17 | −0.23 | −0.27 | −0.19 | −0.26 | +0.03 |
-| 1991–2020 · ERA5/GFS air | −0.35 | −0.32 | −0.46 | −0.24 | −0.25 | −0.25 | −0.31 | −0.22 | −1.47 | −0.16 |
-| Pre-industrial · OISST SST | +0.46 | +0.48 | +0.40 | +0.50 | +0.49 | +0.40 | +0.51 | +0.54 | +0.17 | +0.33 |
-| Pre-industrial · ERA5 SST | +0.31 | +0.35 | +0.24 | +0.36 | +0.40 | +0.25 | +0.36 | +0.40 | +0.09 | +0.10 |
-| Pre-industrial · ERA5/GFS air | +0.47 | +0.47 | +0.46 | +0.48 | +0.47 | +0.33 | +0.47 | +0.49 | +0.41 | +0.08 |
+| Baseline / series | Global | Whole globe | Tropics | N. Hemi | S. Hemi | Niño 3.4 | Pacific | Atlantic | Indian | Arctic | Southern |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1991–2020 · OISST SST | −0.09 | — | −0.10 | −0.15 | −0.04 | −0.09 | −0.08 | −0.11 | −0.05 | −0.18 | +0.27 |
+| 1991–2020 · ERA5 SST | −0.24 | — | −0.23 | −0.31 | −0.18 | −0.17 | −0.23 | −0.27 | −0.19 | −0.26 | +0.03 |
+| 1991–2020 · ERA5/GFS air | −0.35 | −0.40 | −0.32 | −0.46 | −0.24 | −0.25 | −0.25 | −0.31 | −0.22 | −1.47 | −0.16 |
+| Pre-industrial · OISST SST | +0.46 | — | +0.48 | +0.40 | +0.50 | +0.49 | +0.40 | +0.51 | +0.54 | +0.17 | +0.33 |
+| Pre-industrial · ERA5 SST | +0.31 | — | +0.35 | +0.24 | +0.36 | +0.40 | +0.25 | +0.36 | +0.40 | +0.09 | +0.10 |
+| Pre-industrial · ERA5/GFS air | +0.47 | +0.45 | +0.47 | +0.46 | +0.48 | +0.47 | +0.33 | +0.47 | +0.49 | +0.41 | +0.08 |
 
 (Positive offsets raise the curve. A 1991–2020 offset is negative where 1991–2020
 was warmer than 1971–2000. The OISST and ERA5 SST rows differ because their

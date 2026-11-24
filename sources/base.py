@@ -119,11 +119,11 @@ class DataSource(ABC):
         """
         lat_2d, lon_2d = self.latlon_2d(raw)
         result: dict[str, dict[str, float]] = {}
-        for ds_id in self.datasets:
+        for ds_id, spec in self.datasets.items():
             data = self.get_data_array(raw, ds_id)
             result[ds_id] = {
                 rid: regions.aggregate(data, lat_2d, lon_2d, rid)
-                for rid in regions.region_ids()
+                for rid in regions.region_ids_for(spec.variable)
             }
         return result
 

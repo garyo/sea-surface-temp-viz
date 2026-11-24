@@ -602,7 +602,7 @@ def write_offsets() -> None:
             delta = baselines.load_delta(baseline_id, field)
             valid = baselines.load_valid_mask(source, variable)
             table.setdefault(baseline_id, {}).setdefault(source, {})[dataset] = (
-                baselines.regional_offsets(delta, valid, lat_2d, lon_2d)
+                baselines.regional_offsets(delta, variable, valid, lat_2d, lon_2d)
             )
     baselines.OFFSETS_PATH.write_text(json.dumps(table, indent=1) + "\n")
     print(f"✓ {baselines.OFFSETS_PATH}")
