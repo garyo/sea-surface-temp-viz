@@ -201,7 +201,7 @@ the other datasets. And NOAAGlobalTemp's grid runs lowest of the three. The
 difference is well inside the spread between datasets. It accounts for the
 0.03 °C gap in the 2024 pre-industrial anomaly, since the 1991–2020 anomalies
 agree. Our "Global" region spans 60°S–60°N; air temperature also has a
-"Whole globe" region (from 2024 on), which is the one to compare with
+"Whole globe" region (from 2014 on), which is the one to compare with
 whole-planet figures. The daily Climate Pulse comparison confirms that our ERA5
 processing reproduces Copernicus's global means; the 0.02 °C day-to-day scatter
 in anomalies comes from our seasonal offset being two smooth harmonics where
